@@ -29,29 +29,37 @@ INDEX_FILE = INDEX_DIR / "vector_store.json"
 EMBEDDING_BATCH = 50
 
 
+def _clean_name(name: str) -> str:
+    """Nomdan keraksiz belgilarni tozalash: |, :, -, _ va ortiqcha probel."""
+    name = name.strip().lstrip("|:-_").strip()
+    name = name.replace("-", " ").replace("_", " ")
+    name = re.sub(r"\s+", " ", name).strip()
+    return name
+
+
 def parse_module_lesson(source: str) -> Dict[str, str]:
     """Source path'idan modul va dars nomini ajratib oladi.
 
-    Misol:
-      'transcripts/03-modul-tsikllar/04-misollar.md' →
-        {module: '03', module_name: 'tsikllar', lesson: '04', lesson_name: 'misollar'}
+    Qo'llab-quvvatlanadigan nomlar:
+      '00-modul-fikrlash/01-dars-kirish.md'
+      '1-modul-youtube/04-Dars-monetizatsiya.md'
+      '2-modul-yonalish-tanlash/3-dars-asmr-baby.md'
     """
     info: Dict[str, str] = {"module": "", "module_name": "", "lesson": "", "lesson_name": ""}
     parts = [p for p in source.replace("\\", "/").split("/") if p and p != "transcripts"]
 
     if len(parts) >= 2:
-        # parts[-2] = modul papka, parts[-1] = dars fayli
-        m = re.match(r"^(\d+)[-_\s]*(?:modul[-_\s]*)?(.*)$", parts[-2], re.IGNORECASE)
+        m = re.match(r"^(\d+)[-_\s]*(?:modul[-_\s\|:.]*)?(.*)$", parts[-2], re.IGNORECASE)
         if m:
-            info["module"] = m.group(1).lstrip("0") or m.group(1)
-            info["module_name"] = m.group(2).strip().replace("-", " ").replace("_", " ")
+            info["module"] = str(int(m.group(1)))
+            info["module_name"] = _clean_name(m.group(2))
 
     if parts:
-        last = parts[-1].rsplit(".", 1)[0]  # kengaytmasiz
-        m = re.match(r"^(\d+)[-_\s]*(?:dars[-_\s]*)?(.*)$", last, re.IGNORECASE)
+        last = parts[-1].rsplit(".", 1)[0]
+        m = re.match(r"^(\d+)[-_\s]*(?:dars[-_\s\|:.]*)?(.*)$", last, re.IGNORECASE)
         if m:
-            info["lesson"] = m.group(1).lstrip("0") or m.group(1)
-            info["lesson_name"] = m.group(2).strip().replace("-", " ").replace("_", " ")
+            info["lesson"] = str(int(m.group(1)))
+            info["lesson_name"] = _clean_name(m.group(2))
 
     return info
 

@@ -15,7 +15,7 @@ _model = genai.GenerativeModel(
     GEMINI_MODEL,
     generation_config={
         "temperature": 0.3,
-        "max_output_tokens": 1024,
+        "max_output_tokens": 2048,
     },
 )
 

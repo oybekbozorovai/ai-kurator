@@ -5,6 +5,7 @@ from aiogram import Router, F
 from aiogram.enums import ChatType, ChatAction
 from aiogram.types import Message
 
+from handlers.utils import split_for_telegram
 from services.gemini import ask_tutor
 from services.limiter import cache_answer, check_rate_limit, get_cached_answer
 from services.rag import format_context, retrieve
@@ -51,7 +52,10 @@ async def handle_group_message(message: Message) -> None:
 
     cached = get_cached_answer(question)
     if cached:
-        await message.reply(cached + "\n\n_♻️ keshlangan_")
+        parts = split_for_telegram(cached)
+        await message.reply(parts[0])
+        for p in parts[1:]:
+            await message.answer(p)
         return
 
     await message.bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
@@ -62,4 +66,7 @@ async def handle_group_message(message: Message) -> None:
     if not answer.startswith("⚠️"):
         cache_answer(question, answer)
 
-    await message.reply(answer)
+    parts = split_for_telegram(answer)
+    await message.reply(parts[0])
+    for p in parts[1:]:
+        await message.answer(p)

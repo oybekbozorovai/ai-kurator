@@ -5,6 +5,7 @@ from aiogram.enums import ChatType, ChatAction
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
+from handlers.utils import split_for_telegram
 from services.gemini import ask_tutor
 from services.limiter import cache_answer, check_rate_limit, get_cached_answer
 from services.rag import format_context, retrieve
@@ -58,7 +59,8 @@ async def handle_question(message: Message) -> None:
     cached = get_cached_answer(message.text)
     if cached:
         logger.info("Keshdan javob: user=%s", user_id)
-        await message.answer(cached + "\n\n_♻️ keshlangan javob_")
+        for part in split_for_telegram(cached):
+            await message.answer(part)
         return
 
     await message.bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
@@ -70,4 +72,5 @@ async def handle_question(message: Message) -> None:
     if not answer.startswith("⚠️"):
         cache_answer(message.text, answer)
 
-    await message.answer(answer)
+    for part in split_for_telegram(answer):
+        await message.answer(part)

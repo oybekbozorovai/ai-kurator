@@ -1,0 +1,25 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Talaba ma'lumotlari (Railway volume yoki lokal)
+homework_submissions/*
+!homework_submissions/.gitkeep
+
+# Xom video/audio fayllari (juda katta, transkripsiya qilingach kerak emas)
+videos/*
+!videos/.gitkeep
+
+# Audio kesh (transkripsiya jarayonida vaqtinchalik)
+**/.audio_cache/
+
+# Index fayli — xohlasangiz commit qiling, xohlasangiz Railway volume'da saqlang
+# (kichikroq holatlar uchun ham commit qilsa bo'ladi, ~30MB chegarasida)
+# index/vector_store.json

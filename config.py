@@ -26,9 +26,14 @@ VIDEOS_DIR.mkdir(exist_ok=True)
 HOMEWORK_DIR.mkdir(exist_ok=True)
 MATERIALS_DIR.mkdir(exist_ok=True)
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+def _clean(value: str) -> str:
+    """Probel, qo'shtirnoq va ortiqcha belgilardan tozalash."""
+    return value.strip().strip('"').strip("'").strip()
+
+
+TELEGRAM_BOT_TOKEN = _clean(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+GEMINI_API_KEY = _clean(os.getenv("GEMINI_API_KEY", ""))
+GEMINI_MODEL = _clean(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 
 ADMIN_USER_IDS = {
     int(uid.strip())
@@ -40,6 +45,11 @@ _group_id = os.getenv("COURSE_GROUP_ID", "").strip()
 COURSE_GROUP_ID = int(_group_id) if _group_id.lstrip("-").isdigit() else None
 
 if not TELEGRAM_BOT_TOKEN:
-    raise RuntimeError("TELEGRAM_BOT_TOKEN is not set in .env")
+    raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
+if ":" not in TELEGRAM_BOT_TOKEN or not TELEGRAM_BOT_TOKEN.split(":")[0].isdigit():
+    raise RuntimeError(
+        f"TELEGRAM_BOT_TOKEN format noto'g'ri (uzunligi: {len(TELEGRAM_BOT_TOKEN)}). "
+        "Format: '12345:ABC...'. Railway Variables'da qo'shtirnoq qo'ymang!"
+    )
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is not set in .env")
+    raise RuntimeError("GEMINI_API_KEY is not set")

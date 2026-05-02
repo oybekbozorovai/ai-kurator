@@ -15,7 +15,7 @@ _model = genai.GenerativeModel(
     GEMINI_MODEL,
     generation_config={
         "temperature": 0.3,
-        "max_output_tokens": 2048,
+        "max_output_tokens": 4096,
     },
 )
 
@@ -55,7 +55,15 @@ async def grade_homework(
 async def _generate(content) -> str:
     def _call():
         response = _model.generate_content(content)
-        return response.text or "(Gemini bo'sh javob qaytardi)"
+        text = response.text or ""
+        # Tugallanish sababini log qilamiz — debug uchun
+        try:
+            fr = response.candidates[0].finish_reason.name
+            if fr not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+                logger.warning("Gemini javobni to'liq tugatmadi: %s (uzunligi: %d)", fr, len(text))
+        except Exception:
+            pass
+        return text or "(Gemini bo'sh javob qaytardi)"
 
     try:
         return await asyncio.to_thread(_call)

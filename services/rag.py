@@ -29,34 +29,90 @@ INDEX_FILE = INDEX_DIR / "vector_store.json"
 EMBEDDING_BATCH = 50
 
 
+def parse_module_lesson(source: str) -> Dict[str, str]:
+    """Source path'idan modul va dars nomini ajratib oladi.
+
+    Misol:
+      'transcripts/03-modul-tsikllar/04-misollar.md' →
+        {module: '03', module_name: 'tsikllar', lesson: '04', lesson_name: 'misollar'}
+    """
+    info: Dict[str, str] = {"module": "", "module_name": "", "lesson": "", "lesson_name": ""}
+    parts = [p for p in source.replace("\\", "/").split("/") if p and p != "transcripts"]
+
+    if len(parts) >= 2:
+        # parts[-2] = modul papka, parts[-1] = dars fayli
+        m = re.match(r"^(\d+)[-_\s]*(?:modul[-_\s]*)?(.*)$", parts[-2], re.IGNORECASE)
+        if m:
+            info["module"] = m.group(1).lstrip("0") or m.group(1)
+            info["module_name"] = m.group(2).strip().replace("-", " ").replace("_", " ")
+
+    if parts:
+        last = parts[-1].rsplit(".", 1)[0]  # kengaytmasiz
+        m = re.match(r"^(\d+)[-_\s]*(?:dars[-_\s]*)?(.*)$", last, re.IGNORECASE)
+        if m:
+            info["lesson"] = m.group(1).lstrip("0") or m.group(1)
+            info["lesson_name"] = m.group(2).strip().replace("-", " ").replace("_", " ")
+
+    return info
+
+
+def _format_header(info: Dict[str, str]) -> str:
+    """Bo'lak boshiga qo'shiladigan sarlavha — embedding va Gemini ham ko'rishi uchun."""
+    parts = []
+    if info["module"]:
+        m = f"{info['module']}-modul"
+        if info["module_name"]:
+            m += f" ({info['module_name']})"
+        parts.append(m)
+    if info["lesson"]:
+        l = f"{info['lesson']}-dars"
+        if info["lesson_name"]:
+            l += f" ({info['lesson_name']})"
+        parts.append(l)
+    return " | ".join(parts) if parts else ""
+
+
 def chunk_text(text: str, source: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[Dict]:
-    """Matnni paragraf chegaralarini hurmat qilib bo'laklarga bo'ladi."""
+    """Matnni paragraf chegaralarini hurmat qilib bo'laklarga bo'ladi.
+    Har bo'lak boshiga modul/dars sarlavhasi qo'shiladi."""
     text = re.sub(r"\n{3,}", "\n\n", text.strip())
     if not text:
         return []
+
+    info = parse_module_lesson(source)
+    header = _format_header(info)
+    # Sarlavha har bo'lakda bo'lsin — bo'sh joyni hisoblash uchun chunk size'dan ayiramiz
+    effective_size = size - len(header) - 4 if header else size
 
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks: List[str] = []
     current = ""
 
     for para in paragraphs:
-        if len(current) + len(para) + 2 <= size:
+        if len(current) + len(para) + 2 <= effective_size:
             current = f"{current}\n\n{para}" if current else para
         else:
             if current:
                 chunks.append(current)
-            if len(para) <= size:
+            if len(para) <= effective_size:
                 current = para
             else:
-                for i in range(0, len(para), size - overlap):
-                    chunks.append(para[i:i + size])
+                for i in range(0, len(para), effective_size - overlap):
+                    chunks.append(para[i:i + effective_size])
                 current = ""
     if current:
         chunks.append(current)
 
     out: List[Dict] = []
     for i, c in enumerate(chunks):
-        out.append({"text": c, "source": source, "chunk_id": i})
+        text_with_header = f"[{header}]\n{c}" if header else c
+        out.append({
+            "text": text_with_header,
+            "source": source,
+            "chunk_id": i,
+            "module": info["module"],
+            "lesson": info["lesson"],
+        })
     return out
 
 
@@ -181,5 +237,10 @@ def format_context(hits: List[Tuple[Dict, float]]) -> str:
     parts = []
     for chunk, score in hits:
         src = chunk["source"]
-        parts.append(f"### Manba: {src} (mosligi: {score:.2f})\n{chunk['text']}")
+        module = chunk.get("module", "")
+        lesson = chunk.get("lesson", "")
+        label = src
+        if module and lesson:
+            label = f"{module}-modul {lesson}-dars ({src})"
+        parts.append(f"### Manba: {label} (mosligi: {score:.2f})\n{chunk['text']}")
     return "\n\n---\n\n".join(parts)

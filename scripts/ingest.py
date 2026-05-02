@@ -98,17 +98,20 @@ async def ingest_videos(store: VectorStore, force: bool = False) -> int:
     added_count = 0
 
     for path in files:
-        source_name = f"transcripts/{path.stem}.md"
+        # Modul papkasini saqlab qolish: videos/03-modul/04-dars.mp4 → transcripts/03-modul/04-dars.md
+        rel = path.relative_to(VIDEOS_DIR)
+        source_name = f"transcripts/{rel.with_suffix('.md').as_posix()}"
         if source_name in existing and not force:
-            logger.info("O'tkazib yuborildi (allaqachon indexda): %s", path.name)
+            logger.info("O'tkazib yuborildi (allaqachon indexda): %s", rel)
             continue
         if force:
             store.remove_source(source_name)
 
+        output_subdir = transcripts_dir / rel.parent
         try:
-            transcript_path = await transcribe_media(path, transcripts_dir)
+            transcript_path = await transcribe_media(path, output_subdir)
         except Exception as e:
-            logger.exception("Transkripsiya muvaffaqiyatsiz: %s — %s", path.name, e)
+            logger.exception("Transkripsiya muvaffaqiyatsiz: %s — %s", rel, e)
             continue
 
         text = transcript_path.read_text(encoding="utf-8")

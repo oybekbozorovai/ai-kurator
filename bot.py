@@ -6,7 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN
-from handlers import group, homework, private
+from handlers import admin, group, homework, private
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +22,7 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
+    dp.include_router(admin.router)
     dp.include_router(homework.router)
     dp.include_router(private.router)
     dp.include_router(group.router)

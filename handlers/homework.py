@@ -10,7 +10,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
 
-from config import HOMEWORK_DIR
+from config import ADMIN_USER_IDS, HOMEWORK_DIR
+from services.auth import is_user_approved
 from services.gemini import grade_homework
 from services.rag import format_context, retrieve
 
@@ -26,6 +27,10 @@ class HomeworkStates(StatesGroup):
 
 @router.message(Command("uy_vazifa"))
 async def cmd_homework(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
+    if user_id not in ADMIN_USER_IDS and not is_user_approved(user_id):
+        await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting.")
+        return
     await state.clear()
     await state.set_state(HomeworkStates.waiting_assignment)
     await message.answer(

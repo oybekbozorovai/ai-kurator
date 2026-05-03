@@ -9,6 +9,10 @@ venv/
 .idea/
 .vscode/
 
+# Foydalanuvchilar bazasi (Railway volume orqali persistent saqlanadi)
+data/*.db
+data/*.db-*
+
 # Talaba ma'lumotlari (Railway volume yoki lokal)
 homework_submissions/*
 !homework_submissions/.gitkeep

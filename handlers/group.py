@@ -10,6 +10,9 @@ from services.gemini import ask_tutor
 from services.limiter import cache_answer, check_rate_limit, get_cached_answer
 from services.rag import format_context, retrieve
 
+# Guruhda — guruh azoligi o'zi access control bo'lib xizmat qiladi.
+# Talaba guruhga qo'shilgan bo'lsa, bot u bilan ishlaydi.
+
 logger = logging.getLogger(__name__)
 router = Router(name="group")
 router.message.filter(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))

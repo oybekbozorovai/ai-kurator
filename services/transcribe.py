@@ -9,10 +9,12 @@ import asyncio
 import logging
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
 import google.generativeai as genai
+from google.api_core import exceptions as gax_exceptions
 from static_ffmpeg import add_paths
 
 from config import GEMINI_API_KEY, GEMINI_MODEL
@@ -57,13 +59,27 @@ def extract_audio(video_path: Path, audio_path: Path) -> None:
     subprocess.run(cmd, check=True)
 
 
+def _retry_on_quota(fn, *, max_retries: int = 3, initial_wait: int = 60):
+    """Gemini kvota chegarasiga urilganda exponential backoff bilan qayta urinadi."""
+    wait = initial_wait
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except gax_exceptions.ResourceExhausted as e:
+            if attempt == max_retries:
+                logger.error("Kvota chegarasi — barcha urinishlar tugadi")
+                raise
+            logger.warning("Kvota chegarasi (urinish %d/%d), %d soniya kutaman...",
+                           attempt + 1, max_retries, wait)
+            time.sleep(wait)
+            wait = min(wait * 2, 600)  # max 10 daqiqa
+
+
 async def transcribe_audio(audio_path: Path) -> str:
     """Audio faylni Gemini orqali transkripsiya qiladi."""
     def _run() -> str:
         logger.info("Gemini File API'ga yuklanmoqda: %s", audio_path.name)
-        uploaded = genai.upload_file(str(audio_path))
-        # Fayl ACTIVE bo'lguncha kutamiz
-        import time
+        uploaded = _retry_on_quota(lambda: genai.upload_file(str(audio_path)))
         while uploaded.state.name == "PROCESSING":
             time.sleep(2)
             uploaded = genai.get_file(uploaded.name)
@@ -71,10 +87,10 @@ async def transcribe_audio(audio_path: Path) -> str:
             raise RuntimeError(f"Fayl ACTIVE bo'lmadi: {uploaded.state.name}")
 
         model = genai.GenerativeModel(GEMINI_MODEL)
-        response = model.generate_content(
+        response = _retry_on_quota(lambda: model.generate_content(
             [TRANSCRIBE_PROMPT, uploaded],
             generation_config={"temperature": 0.0, "max_output_tokens": 32000},
-        )
+        ))
         try:
             genai.delete_file(uploaded.name)
         except Exception:

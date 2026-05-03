@@ -6,11 +6,13 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import google.generativeai as genai
 import numpy as np
+from google.api_core import exceptions as gax_exceptions
 
 from config import (
     CHUNK_OVERLAP,
@@ -125,14 +127,23 @@ def chunk_text(text: str, source: str, size: int = CHUNK_SIZE, overlap: int = CH
 
 
 def _embed_batch(texts: List[str], task_type: str) -> np.ndarray:
-    """Gemini embedding'larini olish — sinxron, batch."""
-    result = genai.embed_content(
-        model=EMBEDDING_MODEL,
-        content=texts,
-        task_type=task_type,
-        output_dimensionality=EMBEDDING_DIM,
-    )
-    return np.array(result["embedding"], dtype=np.float32)
+    """Gemini embedding'larini olish — sinxron, batch. Kvota xatosida qayta urinadi."""
+    wait = 60
+    for attempt in range(4):
+        try:
+            result = genai.embed_content(
+                model=EMBEDDING_MODEL,
+                content=texts,
+                task_type=task_type,
+                output_dimensionality=EMBEDDING_DIM,
+            )
+            return np.array(result["embedding"], dtype=np.float32)
+        except gax_exceptions.ResourceExhausted:
+            if attempt == 3:
+                raise
+            logger.warning("Embedding kvota chegarasi, %d soniya kutaman...", wait)
+            time.sleep(wait)
+            wait = min(wait * 2, 600)
 
 
 async def embed_documents(texts: List[str]) -> np.ndarray:

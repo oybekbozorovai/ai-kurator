@@ -75,6 +75,15 @@ def _retry_on_quota(fn, *, max_retries: int = 3, initial_wait: int = 60):
             wait = min(wait * 2, 600)  # max 10 daqiqa
 
 
+# Xavfsizlik filtri yumshatilgan — kurs materiali aniq xavfsiz, false positive'lar oldini olish
+SAFETY_OFF = [
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+]
+
+
 async def transcribe_audio(audio_path: Path) -> str:
     """Audio faylni Gemini orqali transkripsiya qiladi."""
     def _run() -> str:
@@ -90,12 +99,24 @@ async def transcribe_audio(audio_path: Path) -> str:
         response = _retry_on_quota(lambda: model.generate_content(
             [TRANSCRIBE_PROMPT, uploaded],
             generation_config={"temperature": 0.0, "max_output_tokens": 32000},
+            safety_settings=SAFETY_OFF,
         ))
         try:
             genai.delete_file(uploaded.name)
         except Exception:
             pass
-        return response.text or ""
+
+        # Aniq xato xabari — agar response.candidates bo'sh bo'lsa
+        if not response.candidates:
+            raise RuntimeError(
+                f"Gemini bo'sh javob qaytardi (xavfsizlik blokirovkasi yoki tokenlar limiti). "
+                f"Audio: {audio_path.name}"
+            )
+        try:
+            return response.text or ""
+        except (ValueError, IndexError) as e:
+            fr = response.candidates[0].finish_reason.name if response.candidates else "?"
+            raise RuntimeError(f"Transkript ololmadik (finish_reason={fr}): {e}")
 
     return await asyncio.to_thread(_run)
 

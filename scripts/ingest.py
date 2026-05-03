@@ -85,9 +85,12 @@ async def ingest_text_files(store: VectorStore, force: bool = False) -> int:
 async def ingest_videos(store: VectorStore, force: bool = False) -> int:
     """videos/ ichidagi video/audio fayllarni transkripsiya qilib, indexga yuklaydi.
     Transkriptlar materials/transcripts/ ga ham saqlanadi."""
+    # Yashirin papkalarni (.audio_cache va boshqalarni) o'tkazib yuborish
     files = [
         p for p in sorted(VIDEOS_DIR.rglob("*"))
-        if p.is_file() and (is_video(p) or is_audio(p))
+        if p.is_file()
+        and (is_video(p) or is_audio(p))
+        and not any(part.startswith(".") for part in p.relative_to(VIDEOS_DIR).parts)
     ]
     if not files:
         logger.info("videos/ papkasida video/audio fayllari topilmadi.")

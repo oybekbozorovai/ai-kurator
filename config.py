@@ -44,6 +44,15 @@ ADMIN_USER_IDS = {
 _group_id = os.getenv("COURSE_GROUP_ID", "").strip()
 COURSE_GROUP_ID = int(_group_id) if _group_id.lstrip("-").isdigit() else None
 
+# Standart kurs ruxsat muddati (oylarda)
+COURSE_ACCESS_MONTHS = int(os.getenv("COURSE_ACCESS_MONTHS", "4"))
+
+# Muddat tugaganda talabani chiqarib yuborish kerak bo'lgan chatlar (vergul bilan)
+KICK_CHAT_IDS = [
+    int(x.strip()) for x in os.getenv("KICK_CHAT_IDS", "").split(",")
+    if x.strip().lstrip("-").isdigit()
+]
+
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 if ":" not in TELEGRAM_BOT_TOKEN or not TELEGRAM_BOT_TOKEN.split(":")[0].isdigit():

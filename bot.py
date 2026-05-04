@@ -7,6 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN
 from handlers import admin, group, homework, private
+from services.scheduler import kick_expired_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +30,10 @@ async def main() -> None:
 
     me = await bot.get_me()
     logger.info("Bot ishga tushdi: @%s (id=%s)", me.username, me.id)
+
+    # Muddati o'tgan talabalarni avtomat chiqarish — har soatda
+    asyncio.create_task(kick_expired_loop(bot))
+    logger.info("Auto-kick scheduler ishga tushirildi")
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

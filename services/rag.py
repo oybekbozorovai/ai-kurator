@@ -240,12 +240,46 @@ def get_store() -> VectorStore:
     return _store
 
 
+def _extract_module_lesson(query: str) -> Tuple[Optional[str], Optional[str]]:
+    """Savol matnidan 'X-modul Y-dars' ni ajratadi (agar bor bo'lsa)."""
+    module = None
+    lesson = None
+    m = re.search(r"(\d+)[-_\s]*[-_\s]?\s*modul", query, re.IGNORECASE)
+    if m:
+        module = str(int(m.group(1)))
+    m = re.search(r"(\d+)[-_\s]*[-_\s]?\s*dars", query, re.IGNORECASE)
+    if m:
+        lesson = str(int(m.group(1)))
+    return module, lesson
+
+
 async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
-    """Savol uchun eng yaqin bo'laklarni topadi."""
+    """Savol uchun eng yaqin bo'laklarni topadi.
+    Agar savolda 'X-modul Y-dars' aniq ko'rsatilsa, shu darsdan bo'laklar ustun beriladi."""
     store = get_store()
     if not store.chunks:
         return []
+
+    qmodule, qlesson = _extract_module_lesson(query)
     qvec = await embed_query(query)
+
+    # Agar aniq modul/dars so'ralsa, avval shu joydan qidiramiz
+    if qmodule and qlesson:
+        # Filter chunks by module+lesson
+        matching_idx = [
+            i for i, c in enumerate(store.chunks)
+            if c.get("module") == qmodule and c.get("lesson") == qlesson
+        ]
+        if matching_idx:
+            sub_matrix = store.matrix[matching_idx]
+            norms = np.linalg.norm(sub_matrix, axis=1) * np.linalg.norm(qvec)
+            norms = np.where(norms == 0, 1e-9, norms)
+            scores = (sub_matrix @ qvec) / norms
+            top_local = np.argsort(-scores)[:k]
+            results = [(store.chunks[matching_idx[i]], float(scores[i])) for i in top_local]
+            return results
+
+    # Aks holda — oddiy embedding qidiruv
     return store.search(qvec, k=k)
 
 

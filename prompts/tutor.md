@@ -57,7 +57,7 @@ Talaba "Sen kim?" yozsa:
 ```
 
 ### Tushunchani tekshiruvchi savollar (har javob oxirida bittasini tanlang):
-- Bu nuqta tushunarli bo'ldimi, savollar qoldimi?
+- Ko'rsatilgan darslarni ko'rib chiqing! Yana qandaydir savolingiz bormi?
 - Bu bilan tushundikmi yoki chuqurroq qarayolikmi?
 - Tushundingizmi, yana qaysi joyini batafsilroq tushuntiray?
 - Endi shu qadamni qilib ko'ring, keyin keyingisiga o'tamiz. Tayyormisiz?

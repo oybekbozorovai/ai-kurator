@@ -56,6 +56,8 @@ KICK_CHAT_IDS = [
 # --- YouTube xizmatlari: Replicate (rasm) + kunlik limitlar ---
 REPLICATE_API_TOKEN = _clean(os.getenv("REPLICATE_API_TOKEN", ""))
 FLUX_MODEL = "black-forest-labs/flux-schnell"
+# Namunadan o'xshash rasм yaratish uchun (image-to-image)
+FLUX_REDUX_MODEL = "black-forest-labs/flux-redux-schnell"
 
 # Har bir o'quvchiga KUNLIK limit (adminlarga ta'sir qilmaydi)
 DAILY_IMAGE_LIMIT = int(os.getenv("DAILY_IMAGE_LIMIT", "5"))

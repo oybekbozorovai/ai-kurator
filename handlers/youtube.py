@@ -33,7 +33,7 @@ from services.gemini import (
 )
 from services.history import count_today, get_history, get_item, log_generation
 from services.image_service import add_text_to_thumbnail, resize_image
-from services.replicate_service import generate_image
+from services.replicate_service import generate_image, generate_variation
 
 logger = logging.getLogger(__name__)
 router = Router(name="youtube")
@@ -356,9 +356,9 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🌅 Thumbnail yaratish\n\n"
         "1️⃣ Ikki yo'l bor:\n"
-        "• Video mavzusini YOZING — bot rasм chizadi\n"
-        "• YOKI o'z RASMINGIZNI yuboring — bot uning ustiga matn qo'shadi\n\n"
-        "Mavzu yozing yoki rasm yuboring 👇",
+        "• Video mavzusini YOZING — bot yangi rasм chizadi\n"
+        "• YOKI namuna RASM yuboring — bot unga o'xshash rasм chizadi\n\n"
+        "Mavzu yozing yoki o'xshash rasм yuboring 👇",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -381,12 +381,14 @@ async def thumb_get_topic(message: Message, state: FSMContext) -> None:
 
 @router.message(YT.thumb_topic, F.photo)
 async def thumb_get_photo(message: Message, state: FSMContext) -> None:
-    """O'quvchi o'z rasmini yubordi — uni asos qilib olamiz."""
+    """O'quvchi namuna rasм yubordi — unga o'xshash rasм chizamiz."""
     file_id = message.photo[-1].file_id  # eng katta o'lchamdagisi
-    await state.update_data(mode="upload", photo_file_id=file_id, topic="O'z rasmi")
+    await state.update_data(mode="upload", photo_file_id=file_id, topic="Namunadan")
     await state.set_state(YT.thumb_text)
-    await message.answer("✅ Rasm qabul qilindi.\n\n" + _TEXT_STEP,
-                         reply_markup=thumb_skip_kb())
+    await message.answer(
+        "✅ Namuna rasм qabul qilindi — unga o'xshash rasм chizaman.\n\n" + _TEXT_STEP,
+        reply_markup=thumb_skip_kb(),
+    )
 
 
 @router.message(YT.thumb_text, F.text & ~F.text.startswith("/"))
@@ -438,10 +440,10 @@ async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text("🎨 Thumbnail yaratilmoqda...")
     try:
         if mode == "upload" and photo_file_id:
-            # O'quvchining o'z rasmi — yuklab olamiz
+            # O'quvchining namuna rasmi — yuklab olib, o'xshashini chizamiz
             buf = io.BytesIO()
             await callback.bot.download(photo_file_id, destination=buf)
-            image = buf.getvalue()
+            image = await generate_variation(buf.getvalue(), aspect_ratio="16:9")
         else:
             # AI rasм chizadi
             prompt = await generate_image_prompt(topic, kind="thumbnail")

@@ -1,12 +1,13 @@
 """Replicate API — Flux modeli orqali rasm yaratish (YouTube xizmatlari uchun)."""
 
 import asyncio
+import io
 import logging
 import urllib.request
 
 import replicate
 
-from config import FLUX_MODEL, REPLICATE_API_TOKEN
+from config import FLUX_MODEL, FLUX_REDUX_MODEL, REPLICATE_API_TOKEN
 
 logger = logging.getLogger(__name__)
 
@@ -48,3 +49,33 @@ async def generate_image(prompt: str, aspect_ratio: str = "1:1") -> bytes:
         raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
     logger.info("Replicate rasm so'rovi: aspect=%s", aspect_ratio)
     return await asyncio.to_thread(_run_sync, prompt, aspect_ratio)
+
+
+def _run_redux_sync(image_bytes: bytes, aspect_ratio: str) -> bytes:
+    """Flux Redux'ни sinxron chaqiradi — namuna rasмdan o'xshash rasм yaratadi."""
+    client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+    bio = io.BytesIO(image_bytes)
+    bio.name = "reference.jpg"  # mimetype aniqlash uchun
+    output = client.run(
+        FLUX_REDUX_MODEL,
+        input={
+            "redux_image": bio,
+            "aspect_ratio": aspect_ratio,
+            "num_outputs": 1,
+            "output_format": "png",
+        },
+    )
+    item = output[0] if isinstance(output, list) else output
+    if hasattr(item, "read"):
+        return item.read()
+    with urllib.request.urlopen(str(item)) as resp:
+        return resp.read()
+
+
+async def generate_variation(image_bytes: bytes,
+                             aspect_ratio: str = "16:9") -> bytes:
+    """Namuna rasмga o'xshash yangi rasм yaratadi (image-to-image, async)."""
+    if not REPLICATE_API_TOKEN:
+        raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
+    logger.info("Replicate redux so'rovi: aspect=%s", aspect_ratio)
+    return await asyncio.to_thread(_run_redux_sync, image_bytes, aspect_ratio)

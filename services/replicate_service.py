@@ -52,7 +52,7 @@ async def generate_image(prompt: str, aspect_ratio: str = "1:1") -> bytes:
 
 
 def _run_redux_sync(image_bytes: bytes, aspect_ratio: str) -> bytes:
-    """Flux Redux'ни sinxron chaqiradi — namuna rasмdan o'xshash rasм yaratadi."""
+    """Flux Redux'ni sinxron chaqiradi — namuna rasmdan o'xshash rasm yaratadi."""
     client = replicate.Client(api_token=REPLICATE_API_TOKEN)
     bio = io.BytesIO(image_bytes)
     bio.name = "reference.jpg"  # mimetype aniqlash uchun
@@ -74,7 +74,7 @@ def _run_redux_sync(image_bytes: bytes, aspect_ratio: str) -> bytes:
 
 async def generate_variation(image_bytes: bytes,
                              aspect_ratio: str = "16:9") -> bytes:
-    """Namuna rasмga o'xshash yangi rasм yaratadi (image-to-image, async)."""
+    """Namuna rasmga o'xshash yangi rasm yaratadi (image-to-image, async)."""
     if not REPLICATE_API_TOKEN:
         raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
     logger.info("Replicate redux so'rovi: aspect=%s", aspect_ratio)

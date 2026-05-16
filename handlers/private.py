@@ -47,7 +47,7 @@ HELP = (
     "/start — botni ishga tushirish\n"
     "/menu — bosh menyuni ochish\n"
     "/yordam — bu xabar\n\n"
-    "Bosh menyuда xizmatni tanlang:\n"
+    "Bosh menyuda xizmatni tanlang:\n"
     "🎓 Kurs bo'yicha savol — savollaringizga javob\n"
     "📺 Kanal SEO, 🎬 Video SEO — matn tayyorlash\n"
     "🖼 Avatar, 🎨 Banner, 🌅 Thumbnail — rasm tayyorlash\n"

@@ -356,9 +356,9 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🌅 Thumbnail yaratish\n\n"
         "1️⃣ Ikki yo'l bor:\n"
-        "• Video mavzusini YOZING — bot rasм chizadi\n"
+        "• Video mavzusini YOZING — bot rasm chizadi\n"
         "• YOKI o'z RASMINGIZNI yuboring — bot uni thumbnail qiladi\n\n"
-        "Mavzu yozing yoki rasм yuboring 👇",
+        "Mavzu yozing yoki rasm yuboring 👇",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -373,7 +373,7 @@ _TEXT_STEP = (
 
 @router.message(YT.thumb_topic, F.text & ~F.text.startswith("/"))
 async def thumb_get_topic(message: Message, state: FSMContext) -> None:
-    """O'quvchi mavzu yozdi — AI rasм chizadi."""
+    """O'quvchi mavzu yozdi — AI rasm chizadi."""
     await state.update_data(topic=message.text.strip(), mode="ai")
     await state.set_state(YT.thumb_text)
     await message.answer(_TEXT_STEP, reply_markup=thumb_skip_kb())
@@ -381,12 +381,12 @@ async def thumb_get_topic(message: Message, state: FSMContext) -> None:
 
 @router.message(YT.thumb_topic, F.photo)
 async def thumb_get_photo(message: Message, state: FSMContext) -> None:
-    """O'quvchi namuna rasм yubordi — unga o'xshash rasм chizamiz."""
+    """O'quvchi namuna rasm yubordi — unga o'xshash rasm chizamiz."""
     file_id = message.photo[-1].file_id  # eng katta o'lchamdagisi
     await state.update_data(mode="upload", photo_file_id=file_id, topic="O'z rasmi")
     await state.set_state(YT.thumb_text)
     await message.answer(
-        "✅ Rasм qabul qilindi.\n\n" + _TEXT_STEP,
+        "✅ Rasm qabul qilindi.\n\n" + _TEXT_STEP,
         reply_markup=thumb_skip_kb(),
     )
 
@@ -403,7 +403,7 @@ async def thumb_get_text(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(YT.thumb_text, F.data == "thumb:notext")
 async def thumb_skip_text(callback: CallbackQuery, state: FSMContext) -> None:
-    """Matnsiz — to'g'ridan-to'g'ri rasм yaratiladi."""
+    """Matnsiz — to'g'ridan-to'g'ri rasm yaratiladi."""
     await state.update_data(overlay="")
     await callback.answer()
     await _make_thumbnail(callback, state)
@@ -445,7 +445,7 @@ async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.bot.download(photo_file_id, destination=buf)
             image = buf.getvalue()
         else:
-            # AI rasм chizadi
+            # AI rasm chizadi
             prompt = await generate_image_prompt(topic, kind="thumbnail")
             image = await generate_image(prompt, aspect_ratio="16:9")
         image = resize_image(image, 1280, 720)

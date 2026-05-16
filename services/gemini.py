@@ -91,12 +91,13 @@ async def generate_channel_seo(niche: str) -> dict:
     Qaytaradi: {"names": [...], "description": "...", "keywords": [...]}
     """
     prompt = (
-        f"Sen YouTube SEO eksperti. Mavzu: {niche}\n\n"
-        "Bergin (o'zbek tilida, JSON formatda):\n"
-        "- 5 ta jozibali kanal nomi varianti\n"
-        "- To'liq kanal tavsifi (200-300 so'z, kalit so'zlar bilan)\n"
-        "- 15 ta kalit so'z (keywords)\n\n"
-        "Faqat JSON qaytar, boshqa hech narsa yozma.\n"
+        f"You are a YouTube SEO expert. Niche: {niche}\n\n"
+        "Generate everything in ENGLISH (for an American YouTube audience), "
+        "as JSON:\n"
+        "- 5 catchy channel name options\n"
+        "- a full channel description (200-300 words, keyword-rich)\n"
+        "- exactly 10 keywords (only the most important, highest-impact ones)\n\n"
+        "Return only JSON, nothing else.\n"
         'Format: {"names": [...], "description": "...", "keywords": [...]}'
     )
     text = await _generate(prompt)
@@ -110,16 +111,17 @@ async def generate_video_seo(topic: str) -> dict:
     Qaytaradi: {"titles": [...], "description": "...", "tags": [...]}
     """
     prompt = (
-        f"YouTube video SEO. Mavzu: {topic}\n\n"
-        "Bergin (o'zbek tilida, JSON):\n"
-        "- 5 ta clickbait video nomi (60 belgidan kam)\n"
-        "- Video tavsifi — QISQA bo'lsin (jami 120-180 so'z):\n"
-        "  * 2-3 jumlali qiziqarli kirish (kalit so'zlar bilan)\n"
-        "  * vaqt belgilari ro'yxati — har bir qator: vaqt + QISQA sarlavha "
-        "(masalan '0:30 Sport mashina sinovi'), UZUN izoh paragraf YOZMA\n"
-        "  * oxirida 3-5 ta hashtag\n"
-        "- 30 ta teg (ro'yxat sifatida)\n\n"
-        "Faqat JSON qaytar, boshqa hech narsa yozma.\n"
+        f"YouTube video SEO. Topic: {topic}\n\n"
+        "Generate everything in ENGLISH (for an American YouTube audience), "
+        "as JSON:\n"
+        "- 5 clickbait video titles (under 60 characters)\n"
+        "- a SHORT video description (120-180 words total):\n"
+        "  * 2-3 engaging intro sentences with keywords\n"
+        "  * a timestamps list — each line: time + a SHORT title "
+        "(e.g. '0:30 Sports car crash test'), NO long paragraphs\n"
+        "  * 3-5 hashtags at the end\n"
+        "- exactly 10 tags (only the most relevant, highest-impact ones)\n\n"
+        "Return only JSON, nothing else.\n"
         'Format: {"titles": [...], "description": "...", "tags": [...]}'
     )
     text = await _generate(prompt)

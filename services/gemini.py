@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -70,3 +72,88 @@ async def _generate(content) -> str:
     except Exception as e:
         logger.exception("Gemini API error")
         return f"⚠️ Gemini bilan bog'lanishda xatolik: {e}"
+
+
+# ============================================================
+# YouTube SEO xizmatlari uchun funksiyalar
+# ============================================================
+
+def _extract_json(text: str) -> dict:
+    """Gemini javobidan JSON qismini ajratib oladi (```json ... ``` ichidan ham)."""
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("Javobdan JSON topilmadi")
+    return json.loads(match.group(0))
+
+
+async def generate_channel_seo(niche: str) -> dict:
+    """Kanal SEO: 5 ta nom, tavsif, 15 ta kalit so'z.
+    Qaytaradi: {"names": [...], "description": "...", "keywords": [...]}
+    """
+    prompt = (
+        f"Sen YouTube SEO eksperti. Mavzu: {niche}\n\n"
+        "Bergin (o'zbek tilida, JSON formatda):\n"
+        "- 5 ta jozibali kanal nomi varianti\n"
+        "- To'liq kanal tavsifi (200-300 so'z, kalit so'zlar bilan)\n"
+        "- 15 ta kalit so'z (keywords)\n\n"
+        "Faqat JSON qaytar, boshqa hech narsa yozma.\n"
+        'Format: {"names": [...], "description": "...", "keywords": [...]}'
+    )
+    text = await _generate(prompt)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return _extract_json(text)
+
+
+async def generate_video_seo(topic: str) -> dict:
+    """Video SEO: 5 ta nom, opisaniye, 30 ta teg.
+    Qaytaradi: {"titles": [...], "description": "...", "tags": [...]}
+    """
+    prompt = (
+        f"YouTube video SEO. Mavzu: {topic}\n\n"
+        "Bergin (o'zbek tilida, JSON):\n"
+        "- 5 ta clickbait video nomi (60 belgidan kam)\n"
+        "- Video opisaniyesi (500-800 so'z, vaqt belgilari bilan, kalit so'zlar)\n"
+        "- 30 ta teg (ro'yxat sifatida)\n\n"
+        "Faqat JSON qaytar, boshqa hech narsa yozma.\n"
+        'Format: {"titles": [...], "description": "...", "tags": [...]}'
+    )
+    text = await _generate(prompt)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return _extract_json(text)
+
+
+# Har bir rasm turi uchun maxsus talablar (ingliz tilida — Flux uchun)
+_IMAGE_RULES = {
+    "avatar": (
+        "1024x1024, square format, simple, memorable, clean, "
+        "solid or transparent background, no text, "
+        "works well as a small circular YouTube channel icon"
+    ),
+    "banner": (
+        "YouTube channel banner, 16:9, professional, modern, "
+        "with a text-free safe zone in the center, visually balanced"
+    ),
+    "thumbnail": (
+        "YouTube video thumbnail, 16:9, dramatic, emotional, "
+        "high contrast, bold colors, expressive, leave empty space for text"
+    ),
+}
+
+
+async def generate_image_prompt(user_input: str, kind: str) -> str:
+    """Foydalanuvchi tavsifidan Flux AI uchun ingliz tilidagi rasm prompti yaratadi.
+    kind: 'avatar' | 'banner' | 'thumbnail'
+    """
+    rules = _IMAGE_RULES.get(kind, _IMAGE_RULES["avatar"])
+    prompt = (
+        f"Foydalanuvchi tavsifi: {user_input}\n\n"
+        f"YouTube {kind} uchun ingliz tilida Flux AI uchun detallashtirilgan "
+        f"rasm prompti yoz.\nTalab: {rules}.\n\n"
+        "Faqat ingliz tilidagi promptni yoz, boshqa hech narsa yozma."
+    )
+    text = await _generate(prompt)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return text.strip().strip('"')

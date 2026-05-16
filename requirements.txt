@@ -7,3 +7,4 @@ numpy==2.0.2
 static-ffmpeg==3.0
 cachetools==5.5.0
 fpdf2==2.8.1
+replicate==1.0.7

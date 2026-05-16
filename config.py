@@ -53,6 +53,17 @@ KICK_CHAT_IDS = [
     if x.strip().lstrip("-").isdigit()
 ]
 
+# --- YouTube xizmatlari: Replicate (rasm) + kunlik limitlar ---
+REPLICATE_API_TOKEN = _clean(os.getenv("REPLICATE_API_TOKEN", ""))
+FLUX_MODEL = "black-forest-labs/flux-schnell"
+
+# Har bir o'quvchiga KUNLIK limit (adminlarga ta'sir qilmaydi)
+DAILY_IMAGE_LIMIT = int(os.getenv("DAILY_IMAGE_LIMIT", "5"))
+DAILY_TEXT_LIMIT = int(os.getenv("DAILY_TEXT_LIMIT", "20"))
+
+# YouTube ishlari tarixi uchun baza
+YT_DB_PATH = BASE_DIR / "data" / "yt.db"
+
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 if ":" not in TELEGRAM_BOT_TOKEN or not TELEGRAM_BOT_TOKEN.split(":")[0].isdigit():

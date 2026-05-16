@@ -6,7 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN
-from handlers import admin, group, homework, private
+from handlers import admin, group, private, youtube
 from services.scheduler import kick_expired_loop
 
 logging.basicConfig(
@@ -23,8 +23,9 @@ async def main() -> None:
     )
     dp = Dispatcher(storage=MemoryStorage())
 
+    # Tartib muhim: youtube (FSM holatli) — private (matn ushlovchi) dan OLDIN
     dp.include_router(admin.router)
-    dp.include_router(homework.router)
+    dp.include_router(youtube.router)
     dp.include_router(private.router)
     dp.include_router(group.router)
 

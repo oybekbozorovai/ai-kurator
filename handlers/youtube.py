@@ -5,6 +5,7 @@ matn ushlovchi handlerlariga halaqit bermaydi (youtube router private'dan oldin
 ulanadi: bot.py ga qarang).
 """
 
+import io
 import logging
 
 from aiogram import F, Router
@@ -353,8 +354,10 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(YT.thumb_topic)
     await callback.message.edit_text(
         "🌅 Thumbnail yaratish\n\n"
-        "1️⃣ Video nima haqida? Qisqa tasvirlab bering.\n"
-        "Masalan: internetdan pul topish bo'yicha qo'llanma",
+        "1️⃣ Ikki yo'l bor:\n"
+        "• Video mavzusini YOZING — bot rasм chizadi\n"
+        "• YOKI o'z RASMINGIZNI yuboring — bot uning ustiga matn qo'shadi\n\n"
+        "Mavzu yozing yoki rasm yuboring 👇",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -362,9 +365,24 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(YT.thumb_topic, F.text & ~F.text.startswith("/"))
 async def thumb_get_topic(message: Message, state: FSMContext) -> None:
-    await state.update_data(topic=message.text.strip())
+    """O'quvchi mavzu yozdi — AI rasм chizadi."""
+    await state.update_data(topic=message.text.strip(), mode="ai")
     await state.set_state(YT.thumb_text)
     await message.answer(
+        "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
+        "Masalan: 1000$ TOPDIM",
+        reply_markup=home_kb(),
+    )
+
+
+@router.message(YT.thumb_topic, F.photo)
+async def thumb_get_photo(message: Message, state: FSMContext) -> None:
+    """O'quvchi o'z rasmini yubordi — uni asos qilib olamiz."""
+    file_id = message.photo[-1].file_id  # eng katta o'lchamdagisi
+    await state.update_data(mode="upload", photo_file_id=file_id, topic="O'z rasmi")
+    await state.set_state(YT.thumb_text)
+    await message.answer(
+        "✅ Rasm qabul qilindi.\n\n"
         "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
         "Masalan: 1000$ TOPDIM",
         reply_markup=home_kb(),
@@ -399,13 +417,22 @@ async def thumb_generate(callback: CallbackQuery, state: FSMContext) -> None:
     topic = data.get("topic", "")
     overlay = data.get("overlay", "")
     position = data.get("position", "bottom")
+    mode = data.get("mode", "ai")
+    photo_file_id = data.get("photo_file_id")
 
     await callback.answer()
-    await callback.message.edit_text("🎨 Thumbnail yaratilmoqda... (30-60 soniya)")
+    await callback.message.edit_text("🎨 Thumbnail yaratilmoqda...")
 
     try:
-        prompt = await generate_image_prompt(topic, kind="thumbnail")
-        image = await generate_image(prompt, aspect_ratio="16:9")
+        if mode == "upload" and photo_file_id:
+            # O'quvchining o'z rasmi — yuklab olamiz
+            buf = io.BytesIO()
+            await callback.bot.download(photo_file_id, destination=buf)
+            image = buf.getvalue()
+        else:
+            # AI rasм chizadi
+            prompt = await generate_image_prompt(topic, kind="thumbnail")
+            image = await generate_image(prompt, aspect_ratio="16:9")
         image = resize_image(image, 1280, 720)
         final = add_text_to_thumbnail(image, overlay, position, color)
     except Exception:

@@ -33,7 +33,7 @@ from services.gemini import (
 )
 from services.history import count_today, get_history, get_item, log_generation
 from services.image_service import add_text_to_thumbnail, resize_image
-from services.replicate_service import generate_image
+from services.replicate_service import generate_image, generate_img2img
 
 logger = logging.getLogger(__name__)
 router = Router(name="youtube")
@@ -357,8 +357,8 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
         "🌅 Thumbnail yaratish\n\n"
         "1️⃣ Ikki yo'l bor:\n"
         "• Video mavzusini YOZING — bot rasm chizadi\n"
-        "• YOKI o'z RASMINGIZNI yuboring — bot uni thumbnail qiladi\n\n"
-        "Mavzu yozing yoki rasm yuboring 👇",
+        "• YOKI namuna RASM yuboring — bot unga o'xshash rasm chizadi\n\n"
+        "Mavzu yozing yoki namuna rasm yuboring 👇",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -386,7 +386,7 @@ async def thumb_get_photo(message: Message, state: FSMContext) -> None:
     await state.update_data(mode="upload", photo_file_id=file_id, topic="O'z rasmi")
     await state.set_state(YT.thumb_text)
     await message.answer(
-        "✅ Rasm qabul qilindi.\n\n" + _TEXT_STEP,
+        "✅ Namuna rasm qabul qilindi — unga o'xshash rasm chizaman.\n\n" + _TEXT_STEP,
         reply_markup=thumb_skip_kb(),
     )
 
@@ -440,10 +440,10 @@ async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text("🎨 Thumbnail yaratilmoqda...")
     try:
         if mode == "upload" and photo_file_id:
-            # O'quvchining rasmi — o'zini ishlatamiz (AI tegmaydi)
+            # Namuna rasm — yuklab olib, ~70% o'xshash yangi rasm chizamiz
             buf = io.BytesIO()
             await callback.bot.download(photo_file_id, destination=buf)
-            image = buf.getvalue()
+            image = await generate_img2img(buf.getvalue())
         else:
             # AI rasm chizadi
             prompt = await generate_image_prompt(topic, kind="thumbnail")

@@ -7,7 +7,12 @@ import urllib.request
 
 import replicate
 
-from config import FLUX_MODEL, FLUX_REDUX_MODEL, REPLICATE_API_TOKEN
+from config import (
+    FLUX_DEV_MODEL,
+    FLUX_MODEL,
+    FLUX_REDUX_MODEL,
+    REPLICATE_API_TOKEN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,3 +84,46 @@ async def generate_variation(image_bytes: bytes,
         raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
     logger.info("Replicate redux so'rovi: aspect=%s", aspect_ratio)
     return await asyncio.to_thread(_run_redux_sync, image_bytes, aspect_ratio)
+
+
+# Sifatni oshiradigan umumiy prompt (img2img uchun)
+_IMG2IMG_PROMPT = (
+    "professional YouTube thumbnail, high quality, sharp focus, "
+    "detailed, vibrant colors, dramatic lighting"
+)
+
+
+def _run_img2img_sync(image_bytes: bytes, prompt_strength: float) -> bytes:
+    """Flux Dev'ni img2img rejimida chaqiradi — namuna rasmga o'xshash rasm.
+    prompt_strength kichik bo'lsa — natija namunaga ko'proq o'xshaydi.
+    """
+    client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+    bio = io.BytesIO(image_bytes)
+    bio.name = "input.jpg"  # mimetype aniqlash uchun
+    output = client.run(
+        FLUX_DEV_MODEL,
+        input={
+            "prompt": _IMG2IMG_PROMPT,
+            "image": bio,
+            "prompt_strength": prompt_strength,
+            "num_outputs": 1,
+            "output_format": "png",
+        },
+    )
+    item = output[0] if isinstance(output, list) else output
+    if hasattr(item, "read"):
+        return item.read()
+    with urllib.request.urlopen(str(item)) as resp:
+        return resp.read()
+
+
+async def generate_img2img(image_bytes: bytes,
+                           prompt_strength: float = 0.3) -> bytes:
+    """Namuna rasmga ~70% o'xshash yangi rasm yaratadi (img2img, async).
+
+    prompt_strength=0.3 -> taxminan 70% o'xshash. Kattalashtirilsa ko'proq o'zgaradi.
+    """
+    if not REPLICATE_API_TOKEN:
+        raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
+    logger.info("Replicate img2img so'rovi: strength=%s", prompt_strength)
+    return await asyncio.to_thread(_run_img2img_sync, image_bytes, prompt_strength)

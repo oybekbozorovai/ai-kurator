@@ -366,7 +366,7 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 _TEXT_STEP = (
     "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
-    "Masalan: BIGGEST CRASH EVER\n\n"
+    "Masalan: RASMDAGI MATN\n\n"
     "Matn kerak bo'lmasa — pastdagi tugmani bosing."
 )
 

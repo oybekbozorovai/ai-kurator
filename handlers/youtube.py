@@ -148,7 +148,7 @@ async def channel_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "📺 Kanal SEO\n\n"
         "Kanalingiz qaysi mavzuda?\n"
-        "Masalan: BeamNG.drive avariya videolari, mashina simulyatori",
+        "Masalan: BeamNG Drive avariya videolari, mashina simulyatori",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -202,7 +202,7 @@ async def video_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🎬 Video SEO\n\n"
         "Video mavzusi nima? Qisqa tasvirlab bering.\n"
-        "Masalan: BeamNG.drive da yuqori tezlikdagi avariyalar",
+        "Masalan: BeamNG Drive da yuqori tezlikdagi avariyalar",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -256,7 +256,7 @@ async def avatar_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🖼 Avatar yaratish\n\n"
         "Kanalingiz nima haqida? Qanday uslub kerak?\n"
-        "Masalan: BeamNG.drive o'yin kanali, dramatik, qizil-qora ranglarda",
+        "Masalan: BeamNG Drive o'yin kanali, dramatik, qizil-qora ranglarda",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -306,7 +306,7 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
         "🎨 Banner yaratish\n\n"
         "Qanday banner xohlaysiz? Batafsil yozing — "
         "kanal nomi, mavzu, ranglar va uslub.\n\n"
-        "Masalan: BeamNG.drive o'yin kanali uchun banner, sinib ketgan "
+        "Masalan: BeamNG Drive o'yin kanali uchun banner, sinib ketgan "
         "mashinalar, dramatik, qizil va qora ranglarda",
         reply_markup=home_kb(),
     )

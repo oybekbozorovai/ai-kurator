@@ -148,7 +148,7 @@ async def channel_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "📺 Kanal SEO\n\n"
         "Kanalingiz qaysi mavzuda?\n"
-        "Masalan: oshxona retsepti, IT ta'lim, sport, sayohat",
+        "Masalan: BeamNG.drive avariya videolari, mashina simulyatori",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -202,7 +202,7 @@ async def video_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🎬 Video SEO\n\n"
         "Video mavzusi nima? Qisqa tasvirlab bering.\n"
-        "Masalan: yangi telefon ko'rib chiqish va taqqoslash",
+        "Masalan: BeamNG.drive da yuqori tezlikdagi avariyalar",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -256,7 +256,7 @@ async def avatar_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🖼 Avatar yaratish\n\n"
         "Kanalingiz nima haqida? Qanday uslub kerak?\n"
-        "Masalan: IT ta'lim kanali, minimalistik, ko'k ranglarda",
+        "Masalan: BeamNG.drive o'yin kanali, dramatik, qizil-qora ranglarda",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -306,8 +306,8 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
         "🎨 Banner yaratish\n\n"
         "Qanday banner xohlaysiz? Batafsil yozing — "
         "kanal nomi, mavzu, ranglar va uslub.\n\n"
-        "Masalan: \"IT Akademiya\" kanali uchun banner, ko'k va binafsha "
-        "ranglarda, kod hamda kompyuter belgilari bilan, zamonaviy uslub",
+        "Masalan: BeamNG.drive o'yin kanali uchun banner, sinib ketgan "
+        "mashinalar, dramatik, qizil va qora ranglarda",
         reply_markup=home_kb(),
     )
     await callback.answer()
@@ -366,7 +366,7 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 _TEXT_STEP = (
     "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
-    "Masalan: 1000$ TOPDIM\n\n"
+    "Masalan: BIGGEST CRASH EVER\n\n"
     "Matn kerak bo'lmasa — pastdagi tugmani bosing."
 )
 

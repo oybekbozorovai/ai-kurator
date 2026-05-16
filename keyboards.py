@@ -36,6 +36,15 @@ def home_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def thumb_skip_kb() -> InlineKeyboardMarkup:
+    """Matn qadami — yozish yoki matnsiz davom etish."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Matnsiz davom etish",
+                              callback_data="thumb:notext")],
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
+    ])
+
+
 def thumb_position_kb() -> InlineKeyboardMarkup:
     """Thumbnail matni joylashuvi."""
     return InlineKeyboardMarkup(inline_keyboard=[

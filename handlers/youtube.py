@@ -23,6 +23,7 @@ from keyboards import (
     main_menu_kb,
     thumb_color_kb,
     thumb_position_kb,
+    thumb_skip_kb,
 )
 from services.auth import is_user_approved
 from services.gemini import (
@@ -363,16 +364,19 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+_TEXT_STEP = (
+    "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
+    "Masalan: 1000$ TOPDIM\n\n"
+    "Matn kerak bo'lmasa — pastdagi tugmani bosing."
+)
+
+
 @router.message(YT.thumb_topic, F.text & ~F.text.startswith("/"))
 async def thumb_get_topic(message: Message, state: FSMContext) -> None:
     """O'quvchi mavzu yozdi — AI rasм chizadi."""
     await state.update_data(topic=message.text.strip(), mode="ai")
     await state.set_state(YT.thumb_text)
-    await message.answer(
-        "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
-        "Masalan: 1000$ TOPDIM",
-        reply_markup=home_kb(),
-    )
+    await message.answer(_TEXT_STEP, reply_markup=thumb_skip_kb())
 
 
 @router.message(YT.thumb_topic, F.photo)
@@ -381,12 +385,8 @@ async def thumb_get_photo(message: Message, state: FSMContext) -> None:
     file_id = message.photo[-1].file_id  # eng katta o'lchamdagisi
     await state.update_data(mode="upload", photo_file_id=file_id, topic="O'z rasmi")
     await state.set_state(YT.thumb_text)
-    await message.answer(
-        "✅ Rasm qabul qilindi.\n\n"
-        "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
-        "Masalan: 1000$ TOPDIM",
-        reply_markup=home_kb(),
-    )
+    await message.answer("✅ Rasm qabul qilindi.\n\n" + _TEXT_STEP,
+                         reply_markup=thumb_skip_kb())
 
 
 @router.message(YT.thumb_text, F.text & ~F.text.startswith("/"))
@@ -397,6 +397,14 @@ async def thumb_get_text(message: Message, state: FSMContext) -> None:
         "3️⃣ Matn rasmda qayerda joylashsin?",
         reply_markup=thumb_position_kb(),
     )
+
+
+@router.callback_query(YT.thumb_text, F.data == "thumb:notext")
+async def thumb_skip_text(callback: CallbackQuery, state: FSMContext) -> None:
+    """Matnsiz — to'g'ridan-to'g'ri rasм yaratiladi."""
+    await state.update_data(overlay="")
+    await callback.answer()
+    await _make_thumbnail(callback, state)
 
 
 @router.callback_query(YT.thumb_position, F.data.startswith("thumb:pos:"))
@@ -412,17 +420,22 @@ async def thumb_get_position(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.callback_query(YT.thumb_color, F.data.startswith("thumb:color:"))
 async def thumb_generate(callback: CallbackQuery, state: FSMContext) -> None:
-    color = callback.data.split(":")[-1]
+    await state.update_data(color=callback.data.split(":")[-1])
+    await callback.answer()
+    await _make_thumbnail(callback, state)
+
+
+async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
+    """Thumbnail rasmini yaratadi/oladi, matn bo'lsa qo'shadi va yuboradi."""
     data = await state.get_data()
     topic = data.get("topic", "")
-    overlay = data.get("overlay", "")
-    position = data.get("position", "bottom")
     mode = data.get("mode", "ai")
     photo_file_id = data.get("photo_file_id")
+    overlay = data.get("overlay", "")
+    position = data.get("position", "bottom")
+    color = data.get("color", "yellow")
 
-    await callback.answer()
     await callback.message.edit_text("🎨 Thumbnail yaratilmoqda...")
-
     try:
         if mode == "upload" and photo_file_id:
             # O'quvchining o'z rasmi — yuklab olamiz
@@ -434,7 +447,8 @@ async def thumb_generate(callback: CallbackQuery, state: FSMContext) -> None:
             prompt = await generate_image_prompt(topic, kind="thumbnail")
             image = await generate_image(prompt, aspect_ratio="16:9")
         image = resize_image(image, 1280, 720)
-        final = add_text_to_thumbnail(image, overlay, position, color)
+        if overlay:  # matn faqat kerak bo'lsa qo'shiladi
+            image = add_text_to_thumbnail(image, overlay, position, color)
     except Exception:
         logger.exception("Thumbnail yaratish xatosi")
         await callback.message.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -446,9 +460,13 @@ async def thumb_generate(callback: CallbackQuery, state: FSMContext) -> None:
     except Exception:
         pass
 
+    caption = "✅ Thumbnail tayyor! (1280x720)"
+    if overlay:
+        caption += f"\nMatn: «{overlay}»"
+    caption += GUIDE["thumbnail"]
     sent = await callback.message.answer_document(
-        BufferedInputFile(final, filename="thumbnail.png"),
-        caption=f"✅ Thumbnail tayyor! (1280x720)\nMatn: «{overlay}»" + GUIDE["thumbnail"],
+        BufferedInputFile(image, filename="thumbnail.png"),
+        caption=caption,
         reply_markup=home_kb(),
     )
     log_generation(callback.from_user.id, "thumbnail", "image",

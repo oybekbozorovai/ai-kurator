@@ -113,7 +113,11 @@ async def generate_video_seo(topic: str) -> dict:
         f"YouTube video SEO. Mavzu: {topic}\n\n"
         "Bergin (o'zbek tilida, JSON):\n"
         "- 5 ta clickbait video nomi (60 belgidan kam)\n"
-        "- Video opisaniyesi (500-800 so'z, vaqt belgilari bilan, kalit so'zlar)\n"
+        "- Video tavsifi — QISQA bo'lsin (jami 120-180 so'z):\n"
+        "  * 2-3 jumlali qiziqarli kirish (kalit so'zlar bilan)\n"
+        "  * vaqt belgilari ro'yxati — har bir qator: vaqt + QISQA sarlavha "
+        "(masalan '0:30 Sport mashina sinovi'), UZUN izoh paragraf YOZMA\n"
+        "  * oxirida 3-5 ta hashtag\n"
         "- 30 ta teg (ro'yxat sifatida)\n\n"
         "Faqat JSON qaytar, boshqa hech narsa yozma.\n"
         'Format: {"titles": [...], "description": "...", "tags": [...]}'

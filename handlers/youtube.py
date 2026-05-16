@@ -302,8 +302,10 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(YT.banner)
     await callback.message.edit_text(
         "🎨 Banner yaratish\n\n"
-        "Kanal nomi va mavzusini yozing.\n"
-        "Masalan: \"IT Akademiya\" — dasturlash kanali",
+        "Qanday banner xohlaysiz? Batafsil yozing — "
+        "kanal nomi, mavzu, ranglar va uslub.\n\n"
+        "Masalan: \"IT Akademiya\" kanali uchun banner, ko'k va binafsha "
+        "ranglarda, kod hamda kompyuter belgilari bilan, zamonaviy uslub",
         reply_markup=home_kb(),
     )
     await callback.answer()

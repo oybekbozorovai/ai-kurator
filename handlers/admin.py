@@ -29,7 +29,7 @@ def _is_admin(user_id: int) -> bool:
     return user_id in ADMIN_USER_IDS
 
 
-router.message.filter(F.from_user.id.in_(ADMIN_USER_IDS) | F.chat.type == ChatType.PRIVATE)
+router.message.filter(F.from_user.id.in_(ADMIN_USER_IDS) | (F.chat.type == ChatType.PRIVATE))
 
 
 HELP_TEXT = (

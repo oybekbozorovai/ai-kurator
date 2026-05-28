@@ -13,16 +13,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
-    KeyboardButton,
     Message,
-    ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
 
 from config import ADMIN_USER_IDS
 from handlers.utils import split_for_telegram
 from keyboards import MENU_TEXT, home_kb, main_menu_kb
-from services.auth import approve_user, is_phone_allowed, is_user_approved
+from services.auth import approve_user, is_phone_allowed, is_user_approved, normalize_phone
 from services.gemini import ask_tutor
 from services.limiter import cache_answer, check_rate_limit, get_cached_answer
 from services.rag import format_context, retrieve
@@ -58,14 +56,15 @@ REGISTRATION_TEXT = (
     "👋 Salom!\n\n"
     "Bu bot — onlayn kursning rasmiy AI yordamchisi. "
     "Faqat kurs talabalari foydalana oladi.\n\n"
-    "📱 Telefon raqamingizni jo'nating, biz sizning kursdaligingizni tekshiramiz.\n\n"
-    "Pastdagi tugmani bosing:"
+    "📱 Kursga yozilgan telefon raqamingizni yozib yuboring.\n"
+    "Masalan: +998901234567\n\n"
+    "ℹ️ Telegramdagi raqamingiz boshqacha bo'lsa ham — kursga yozilgan raqamni yozing."
 )
 
 NOT_ALLOWED_TEXT = (
-    "❌ Sizning telefon raqamingiz kurs ro'yxatida topilmadi.\n\n"
-    "Agar siz haqiqatdan ham kursni xarid qilgan bo'lsangiz, ustozga murojaat qiling. "
-    "Iltimos, telefon raqamingizni va to'liq ismingizni bering."
+    "❌ Bu raqam kurs ro'yxatida topilmadi.\n\n"
+    "• Raqamni xato yozgan bo'lsangiz — qaytadan to'g'ri yozing (masalan: +998901234567).\n"
+    "• Kursni xarid qilganingizga ishonchingiz komil bo'lsa — ustozga murojaat qiling."
 )
 
 
@@ -73,16 +72,26 @@ def _is_allowed(user_id: int) -> bool:
     return user_id in ADMIN_USER_IDS or is_user_approved(user_id)
 
 
-def _phone_keyboard() -> ReplyKeyboardMarkup:
-    button = KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)
-    return ReplyKeyboardMarkup(
-        keyboard=[[button]], resize_keyboard=True, one_time_keyboard=True
-    )
-
-
 async def _request_phone(message: Message, state: FSMContext) -> None:
     await state.set_state(AuthStates.waiting_for_phone)
-    await message.answer(REGISTRATION_TEXT, reply_markup=_phone_keyboard())
+    await message.answer(REGISTRATION_TEXT, reply_markup=ReplyKeyboardRemove())
+
+
+async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) -> None:
+    """Raqam ruxsat ro'yxatida topilganda — tasdiqlaydi va menyuni ochadi."""
+    approve_user(
+        telegram_id=message.from_user.id,
+        phone=phone,
+        first_name=message.from_user.first_name or "",
+        username=message.from_user.username or "",
+    )
+    await state.clear()
+    await message.answer(
+        f"✅ Tasdiqlandi! Xush kelibsiz, {message.from_user.first_name or 'talaba'}.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await _show_menu(message)
+    logger.info("Yangi talaba tasdiqlandi: %s (id=%s)", phone, message.from_user.id)
 
 
 async def _show_menu(message: Message) -> None:
@@ -107,41 +116,41 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await _request_phone(message, state)
 
 
+@router.message(AuthStates.waiting_for_phone, F.text & ~F.text.startswith("/"))
+async def receive_typed_phone(message: Message, state: FSMContext) -> None:
+    """O'quvchi kursga yozilgan raqamini yozadi (Telegram raqamidan farq qilsa ham)."""
+    phone = normalize_phone(message.text)
+    if len(phone) < 9:
+        await message.answer(
+            "⚠️ Telefon raqamini to'liq yozing.\nMasalan: +998901234567"
+        )
+        return  # holatni saqlab qolamiz — qaytadan urinib ko'rsin
+
+    if is_phone_allowed(phone):
+        await _approve_and_welcome(message, state, phone)
+    else:
+        await message.answer(NOT_ALLOWED_TEXT)  # holat saqlanadi, qayta yozsa bo'ladi
+        logger.info("Ruxsat etilmagan raqam (yozilgan): %s (id=%s)", phone, message.from_user.id)
+
+
 @router.message(AuthStates.waiting_for_phone, F.contact)
 async def receive_contact(message: Message, state: FSMContext) -> None:
+    """O'quvchi kontaktni ulashsa ham qabul qilamiz (ixtiyoriy)."""
     contact = message.contact
     if not contact:
         return
-    if contact.user_id != message.from_user.id:
-        await message.answer("⚠️ Iltimos, faqat o'zingizning kontaktingizni jo'nating.")
-        return
-
     phone = contact.phone_number
     if is_phone_allowed(phone):
-        approve_user(
-            telegram_id=message.from_user.id,
-            phone=phone,
-            first_name=message.from_user.first_name or "",
-            username=message.from_user.username or "",
-        )
-        await state.clear()
-        await message.answer(
-            f"✅ Tasdiqlandi! Xush kelibsiz, {message.from_user.first_name or 'talaba'}.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        await _show_menu(message)
-        logger.info("Yangi talaba tasdiqlandi: %s (id=%s)", phone, message.from_user.id)
+        await _approve_and_welcome(message, state, phone)
     else:
-        await state.clear()
-        await message.answer(NOT_ALLOWED_TEXT, reply_markup=ReplyKeyboardRemove())
-        logger.info("Ruxsat etilmagan raqam: %s (id=%s)", phone, message.from_user.id)
+        await message.answer(NOT_ALLOWED_TEXT)
+        logger.info("Ruxsat etilmagan raqam (kontakt): %s (id=%s)", phone, message.from_user.id)
 
 
 @router.message(AuthStates.waiting_for_phone)
 async def waiting_for_phone_other(message: Message) -> None:
     await message.answer(
-        "⚠️ Iltimos, pastdagi tugma orqali telefon raqamingizni jo'nating.",
-        reply_markup=_phone_keyboard(),
+        "⚠️ Iltimos, kursga yozilgan telefon raqamingizni yozing.\nMasalan: +998901234567"
     )
 
 

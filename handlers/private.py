@@ -20,7 +20,13 @@ from aiogram.types import (
 from config import ADMIN_USER_IDS
 from handlers.utils import split_for_telegram
 from keyboards import MENU_TEXT, home_kb, main_menu_kb
-from services.auth import approve_user, is_phone_allowed, is_user_approved, normalize_phone
+from services.auth import (
+    approve_user,
+    get_phone_owner,
+    is_phone_allowed,
+    is_user_approved,
+    normalize_phone,
+)
 from services.gemini import ask_tutor
 from services.limiter import cache_answer, check_rate_limit, get_cached_answer
 from services.rag import format_context, retrieve
@@ -57,14 +63,20 @@ REGISTRATION_TEXT = (
     "Bu bot — onlayn kursning rasmiy AI yordamchisi. "
     "Faqat kurs talabalari foydalana oladi.\n\n"
     "📱 Kursga yozilgan telefon raqamingizni yozib yuboring.\n"
-    "Masalan: +998901234567\n\n"
+    "Masalan: +998901234567 yoki 901234567\n\n"
     "ℹ️ Telegramdagi raqamingiz boshqacha bo'lsa ham — kursga yozilgan raqamni yozing."
 )
 
 NOT_ALLOWED_TEXT = (
     "❌ Bu raqam kurs ro'yxatida topilmadi.\n\n"
-    "• Raqamni xato yozgan bo'lsangiz — qaytadan to'g'ri yozing (masalan: +998901234567).\n"
+    "• Raqamni xato yozgan bo'lsangiz — qaytadan to'g'ri yozing (masalan: +998901234567 yoki 901234567).\n"
     "• Kursni xarid qilganingizga ishonchingiz komil bo'lsa — ustozga murojaat qiling."
+)
+
+ALREADY_USED_TEXT = (
+    "⛔ Bu telefon raqami allaqachon boshqa Telegram akkaunti bilan ro'yxatdan o'tgan.\n\n"
+    "Har bir raqam faqat bitta akkaunt bilan ishlatiladi. "
+    "Agar bu sizning raqamingiz bo'lsa-yu, kira olmayotgan bo'lsangiz — ustozga murojaat qiling."
 )
 
 
@@ -92,6 +104,25 @@ async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) 
     )
     await _show_menu(message)
     logger.info("Yangi talaba tasdiqlandi: %s (id=%s)", phone, message.from_user.id)
+
+
+async def _process_phone(message: Message, state: FSMContext, raw_phone: str) -> None:
+    """Raqamni tekshiradi: ruxsat ro'yxatida bormi + boshqa akkount band qilmaganmi."""
+    phone = normalize_phone(raw_phone)
+
+    if not is_phone_allowed(phone):
+        await message.answer(NOT_ALLOWED_TEXT)
+        logger.info("Ruxsat etilmagan raqam: %s (id=%s)", phone, message.from_user.id)
+        return
+
+    owner = get_phone_owner(phone)
+    if owner is not None and owner != message.from_user.id:
+        await message.answer(ALREADY_USED_TEXT)
+        logger.info("Band raqam: %s (egasi id=%s), urindi id=%s",
+                    phone, owner, message.from_user.id)
+        return
+
+    await _approve_and_welcome(message, state, phone)
 
 
 async def _show_menu(message: Message) -> None:
@@ -122,15 +153,11 @@ async def receive_typed_phone(message: Message, state: FSMContext) -> None:
     phone = normalize_phone(message.text)
     if len(phone) < 9:
         await message.answer(
-            "⚠️ Telefon raqamini to'liq yozing.\nMasalan: +998901234567"
+            "⚠️ Telefon raqamini to'liq yozing.\nMasalan: +998901234567 yoki 901234567"
         )
         return  # holatni saqlab qolamiz — qaytadan urinib ko'rsin
 
-    if is_phone_allowed(phone):
-        await _approve_and_welcome(message, state, phone)
-    else:
-        await message.answer(NOT_ALLOWED_TEXT)  # holat saqlanadi, qayta yozsa bo'ladi
-        logger.info("Ruxsat etilmagan raqam (yozilgan): %s (id=%s)", phone, message.from_user.id)
+    await _process_phone(message, state, phone)
 
 
 @router.message(AuthStates.waiting_for_phone, F.contact)
@@ -139,12 +166,7 @@ async def receive_contact(message: Message, state: FSMContext) -> None:
     contact = message.contact
     if not contact:
         return
-    phone = contact.phone_number
-    if is_phone_allowed(phone):
-        await _approve_and_welcome(message, state, phone)
-    else:
-        await message.answer(NOT_ALLOWED_TEXT)
-        logger.info("Ruxsat etilmagan raqam (kontakt): %s (id=%s)", phone, message.from_user.id)
+    await _process_phone(message, state, contact.phone_number)
 
 
 @router.message(AuthStates.waiting_for_phone)

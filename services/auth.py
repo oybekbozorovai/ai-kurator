@@ -141,6 +141,19 @@ def approve_user(telegram_id: int, phone: str, first_name: str = "", username: s
         c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
 
 
+def get_phone_owner(phone: str) -> Optional[int]:
+    """Shu raqam bilan ro'yxatdan o'tgan telegram_id ni qaytaradi (bo'lmasa None)."""
+    n = normalize_phone(phone)
+    if not n:
+        return None
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        row = c.execute(
+            "SELECT telegram_id FROM approved_users WHERE phone = ?",
+            (n,),
+        ).fetchone()
+        return row[0] if row else None
+
+
 def is_user_approved(telegram_id: int) -> bool:
     """Foydalanuvchi tasdiqlangan VA muddati o'tmagan."""
     now = int(time.time())

@@ -2,6 +2,8 @@
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from video_seo_presets import VIDEO_SEO_PRESETS
+
 # Bosh menyu matni
 MENU_TEXT = "🤖 Bosh menyu\n\nKerakli xizmatni tanlang 👇"
 
@@ -34,6 +36,19 @@ def home_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
     ])
+
+
+def video_seo_menu_kb() -> InlineKeyboardMarkup:
+    """Video SEO — 6 ta tayyor yo'nalish + 'O'z yo'nalishim' (AI) + bosh menyu."""
+    rows = [
+        [InlineKeyboardButton(text=preset["name"], callback_data=f"vseo:{key}")]
+        for key, preset in VIDEO_SEO_PRESETS.items()
+    ]
+    rows.append([InlineKeyboardButton(
+        text="✏️ O'z yo'nalishim (AI)", callback_data="vseo:custom"
+    )])
+    rows.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def thumb_skip_kb() -> InlineKeyboardMarkup:

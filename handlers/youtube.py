@@ -24,7 +24,9 @@ from keyboards import (
     thumb_color_kb,
     thumb_position_kb,
     thumb_skip_kb,
+    video_seo_menu_kb,
 )
+from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
 from services.auth import is_user_approved
 from services.gemini import (
     generate_channel_seo,
@@ -191,6 +193,46 @@ async def channel_process(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "menu:video_seo")
 async def video_start(callback: CallbackQuery, state: FSMContext) -> None:
+    """Video SEO — tayyor yo'nalishlar menyusini ko'rsatadi."""
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    await state.clear()
+    await callback.message.edit_text(
+        "🎬 Video SEO\n\n"
+        "Tayyor yo'nalishlardan birini tanlang yoki o'z mavzungiz uchun "
+        "AI'ga SEO qildiring 👇",
+        reply_markup=video_seo_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("vseo:") & ~(F.data == "vseo:custom"))
+async def video_preset(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tayyor yo'nalishni ko'rsatadi — AI ishlatilmaydi, limit yo'q."""
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    key = callback.data.split(":", 1)[1]
+    preset = VIDEO_SEO_PRESETS.get(key)
+    if not preset:
+        await callback.answer("Yo'nalish topilmadi.", show_alert=True)
+        return
+    await state.clear()
+    await callback.answer()
+    result = format_preset(preset) + GUIDE["video_seo"]
+    log_generation(callback.from_user.id, "video_seo", "text",
+                   label=preset["name"], result_type="text", result_text=result)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await _send_text_result(callback.message, result)
+
+
+@router.callback_query(F.data == "vseo:custom")
+async def video_custom(callback: CallbackQuery, state: FSMContext) -> None:
+    """O'z yo'nalishi — mavzu so'raydi, AI generatsiya qiladi."""
     if not _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
@@ -200,7 +242,7 @@ async def video_start(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.set_state(YT.video)
     await callback.message.edit_text(
-        "🎬 Video SEO\n\n"
+        "🎬 Video SEO — o'z yo'nalishingiz\n\n"
         "Video mavzusi nima? Qisqa tasvirlab bering.\n"
         "Masalan: BeamNG Drive da yuqori tezlikdagi avariyalar",
         reply_markup=home_kb(),

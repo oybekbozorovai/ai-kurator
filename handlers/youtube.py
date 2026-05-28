@@ -5,6 +5,7 @@ matn ushlovchi handlerlariga halaqit bermaydi (youtube router private'dan oldin
 ulanadi: bot.py ga qarang).
 """
 
+import html
 import io
 import logging
 
@@ -105,6 +106,37 @@ async def _send_text_result(message: Message, text: str) -> None:
         await message.answer(
             part, reply_markup=home_kb() if i == len(parts) - 1 else None
         )
+
+
+def _seo_copyable_html(name: str, titles: list, description: str, tags: list) -> str:
+    """Video SEO natijasi — nom/opisaniye/teglar alohida HTML bloklar ichida.
+    Telegram'da har blokni bosganda matn nusxalanadi. parse_mode='HTML' bilan yuboriladi."""
+    parts = [f"🎬 {html.escape(name)}\n"]
+
+    titles = titles or []
+    if titles:
+        if len(titles) == 1:
+            parts.append("📌 Video nomi (bosib nusxalang):")
+        else:
+            parts.append("📌 Video nomi variantlari (har birini bosib nusxalang):")
+        for t in titles:
+            parts.append(f"<code>{html.escape(str(t))}</code>")
+
+    if description:
+        parts.append("\n📝 Opisaniye (bosib nusxalang):")
+        parts.append(f"<pre>{html.escape(str(description))}</pre>")
+
+    if tags:
+        parts.append("\n🏷 Teglar (bosib nusxalang):")
+        tag_str = ", ".join(str(t) for t in tags)
+        parts.append(f"<pre>{html.escape(tag_str)}</pre>")
+
+    return "\n".join(parts) + GUIDE["video_seo"]
+
+
+async def _send_seo_html(message: Message, text: str) -> None:
+    """Nusxalanadigan SEO natijasini HTML rejimda yuboradi, 🏠 tugma bilan."""
+    await message.answer(text, parse_mode="HTML", reply_markup=home_kb())
 
 
 async def _deny_limit(callback: CallbackQuery, kind: str) -> None:
@@ -220,14 +252,18 @@ async def video_preset(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.clear()
     await callback.answer()
-    result = format_preset(preset) + GUIDE["video_seo"]
+    plain = format_preset(preset) + GUIDE["video_seo"]  # tarix uchun toza matn
     log_generation(callback.from_user.id, "video_seo", "text",
-                   label=preset["name"], result_type="text", result_text=result)
+                   label=preset["name"], result_type="text", result_text=plain)
     try:
         await callback.message.delete()
     except Exception:
         pass
-    await _send_text_result(callback.message, result)
+    html_result = _seo_copyable_html(
+        preset["name"], preset.get("titles", []),
+        preset.get("description", ""), preset.get("tags", []),
+    )
+    await _send_seo_html(callback.message, html_result)
 
 
 @router.callback_query(F.data == "vseo:custom")
@@ -265,6 +301,7 @@ async def video_process(message: Message, state: FSMContext) -> None:
     description = data.get("description", "")
     tags = data.get("tags", [])
 
+    # Tarix uchun toza matn
     lines = ["🎬 Video SEO tayyor!\n", "📌 Video nomi variantlari:"]
     for i, title in enumerate(titles, 1):
         lines.append(f"{i}. {title}")
@@ -272,13 +309,14 @@ async def video_process(message: Message, state: FSMContext) -> None:
     lines.append(str(description))
     lines.append("\n🏷 Teglar:")
     lines.append(", ".join(str(t) for t in tags))
-    result = "\n".join(lines) + GUIDE["video_seo"]
+    plain = "\n".join(lines) + GUIDE["video_seo"]
 
     log_generation(message.from_user.id, "video_seo", "text",
-                   label=topic, result_type="text", result_text=result)
+                   label=topic, result_type="text", result_text=plain)
     await state.clear()
     await waiting.delete()
-    await _send_text_result(message, result)
+    html_result = _seo_copyable_html(topic, titles, description, tags)
+    await _send_seo_html(message, html_result)
 
 
 # ============================================================

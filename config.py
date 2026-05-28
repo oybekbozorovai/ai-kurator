@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -35,11 +36,8 @@ TELEGRAM_BOT_TOKEN = _clean(os.getenv("TELEGRAM_BOT_TOKEN", ""))
 GEMINI_API_KEY = _clean(os.getenv("GEMINI_API_KEY", ""))
 GEMINI_MODEL = _clean(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 
-ADMIN_USER_IDS = {
-    int(uid.strip())
-    for uid in os.getenv("ADMIN_USER_IDS", "").split(",")
-    if uid.strip().isdigit()
-}
+# Qo'shtirnoq, probel, vergul yoki nuqta-vergul — qanday yozilsa ham ID'larni ajratadi
+ADMIN_USER_IDS = {int(x) for x in re.findall(r"\d+", os.getenv("ADMIN_USER_IDS", ""))}
 
 _group_id = os.getenv("COURSE_GROUP_ID", "").strip()
 COURSE_GROUP_ID = int(_group_id) if _group_id.lstrip("-").isdigit() else None

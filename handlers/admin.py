@@ -61,6 +61,19 @@ async def cmd_admin_help(message: Message) -> None:
     await message.answer(HELP_TEXT, parse_mode="Markdown")
 
 
+@router.message(Command("myid"))
+async def cmd_myid(message: Message) -> None:
+    """Har kim ishlatadi — o'z ID'sini va admin holatini ko'rsatadi (diagnostika)."""
+    uid = message.from_user.id
+    admin_status = "HA ✅" if uid in ADMIN_USER_IDS else "YO'Q ❌"
+    admins = ", ".join(str(x) for x in sorted(ADMIN_USER_IDS)) or "(bo'sh)"
+    await message.answer(
+        f"🆔 Sizning Telegram ID: {uid}\n"
+        f"👑 Admin: {admin_status}\n"
+        f"📋 Botdagi adminlar ro'yxati: {admins}"
+    )
+
+
 @router.message(Command("chat_id"))
 async def cmd_chat_id(message: Message) -> None:
     """Har qanday chatda ishlaydi — chat ID'ini ko'rsatadi."""

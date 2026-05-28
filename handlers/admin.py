@@ -14,6 +14,7 @@ from services.auth import (
     add_allowed_phones,
     ban_user,
     get_expiring_soon,
+    list_allowed_phones,
     list_approved_users,
     remove_allowed_phone,
     stats,
@@ -34,23 +35,25 @@ router.message.filter(F.from_user.id.in_(ADMIN_USER_IDS) | (F.chat.type == ChatT
 
 HELP_TEXT = (
     "🔐 Admin buyruqlari:\n\n"
-    "**Statistika va ko'rish:**\n"
+    "Statistika va ko'rish:\n"
     "/admin_stats — umumiy statistika\n"
-    "/list_users — ro'yxatdan o'tgan talabalar\n"
+    "/list_users — ro'yxatdan o'tgan (kontakt ulashgan) talabalar\n"
+    "/list_phones — ruxsat ro'yxatiga qo'shilgan raqamlar\n"
     "/list_expiring — yaqin 7 kun ichida muddati tugaydiganlar\n\n"
-    "**Telefon ro'yxati:**\n"
-    f"/add_phone +998901234567 [oy] — bitta raqam (default: {COURSE_ACCESS_MONTHS} oy)\n"
+    "Telefon ro'yxati:\n"
+    f"/add_phone +998901234567 [oy] — bitta raqam (default: {COURSE_ACCESS_MONTHS} oy, 0 = cheksiz)\n"
     "/remove_phone +998901234567 — raqamni o'chirish\n"
-    "📂 Fayl yuklash: txt/csv faylni caption bilan yuboring:\n"
+    "Fayl yuklash: txt/csv faylni caption bilan yuboring:\n"
     f"  /upload_phones — default {COURSE_ACCESS_MONTHS} oy\n"
     "  /upload_phones 6 — 6 oy\n"
     "  /upload_phones 0 — cheksiz\n\n"
-    "**Boshqaruv:**\n"
+    "Boshqaruv:\n"
     "/ban_user 123456789 — ban\n"
     "/unban_user 123456789 — banni olib tashlash\n"
     "/kick_now — muddati o'tganlarni darhol chiqarish (odatda avtomat)\n\n"
-    "**Yordamchi:**\n"
+    "Yordamchi:\n"
     "/chat_id — joriy chat ID'ini ko'rsatadi (KICK_CHAT_IDS uchun)\n"
+    "/myid — o'z ID va admin holatingiz\n"
 )
 
 
@@ -58,7 +61,7 @@ HELP_TEXT = (
 async def cmd_admin_help(message: Message) -> None:
     if not _is_admin(message.from_user.id):
         return
-    await message.answer(HELP_TEXT, parse_mode="Markdown")
+    await message.answer(HELP_TEXT)
 
 
 @router.message(Command("myid"))
@@ -80,10 +83,9 @@ async def cmd_chat_id(message: Message) -> None:
     if not _is_admin(message.from_user.id):
         return
     await message.reply(
-        f"Joriy chat ID: `{message.chat.id}`\n"
+        f"Joriy chat ID: {message.chat.id}\n"
         f"Chat turi: {message.chat.type}\n"
-        f"Chat nomi: {message.chat.title or message.chat.full_name or '-'}",
-        parse_mode="Markdown",
+        f"Chat nomi: {message.chat.title or message.chat.full_name or '-'}"
     )
 
 
@@ -205,6 +207,36 @@ async def cmd_list_users(message: Message) -> None:
         lines.append(f"• {name} ({u}) — +{phone} — id={tid} — ⏱{exp}")
     if len(users) > 50:
         lines.append(f"\n... va yana {len(users) - 50} ta")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("list_phones"))
+async def cmd_list_phones(message: Message) -> None:
+    """Ruxsat ro'yxatiga qo'shilgan raqamlarni ko'rsatadi (ro'yxatdan o'tgan/o'tmaganini belgilaydi)."""
+    if not _is_admin(message.from_user.id):
+        return
+    phones = list_allowed_phones(limit=500)
+    if not phones:
+        await message.answer(
+            "Ruxsat ro'yxati bo'sh.\n"
+            "/add_phone +998901234567 bilan raqam qo'shing."
+        )
+        return
+
+    registered = sum(1 for _, _, is_reg in phones if is_reg)
+    lines = [
+        f"📋 Ruxsat ro'yxatidagi raqamlar: {len(phones)} ta\n"
+        f"(✅ ro'yxatdan o'tgan: {registered} ta, ⏳ hali kutilmoqda: {len(phones) - registered} ta)\n"
+    ]
+    for phone, expires_at, is_reg in phones[:100]:
+        if expires_at == 0:
+            exp = "cheksiz"
+        else:
+            exp = datetime.fromtimestamp(expires_at).strftime("%Y-%m-%d")
+        mark = "✅" if is_reg else "⏳"
+        lines.append(f"{mark} +{phone} — ⏱{exp}")
+    if len(phones) > 100:
+        lines.append(f"\n... va yana {len(phones) - 100} ta")
     await message.answer("\n".join(lines))
 
 

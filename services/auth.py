@@ -187,6 +187,18 @@ def list_approved_users(limit: int = 200) -> List[Tuple]:
         ).fetchall()
 
 
+def list_allowed_phones(limit: int = 500) -> List[Tuple]:
+    """Ruxsat ro'yxatidagi raqamlar va ular ro'yxatdan o'tganmi.
+    Qaytaradi: (phone, expires_at, is_registered) — is_registered=1 agar o'sha raqam approved_users'da bo'lsa."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return c.execute(
+            "SELECT a.phone, a.expires_at, "
+            "       EXISTS(SELECT 1 FROM approved_users u WHERE u.phone = a.phone) "
+            "FROM allowed_phones a ORDER BY a.added_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+
 def get_expired_users() -> List[Tuple]:
     """Muddati o'tgan tasdiqlangan foydalanuvchilar."""
     now = int(time.time())

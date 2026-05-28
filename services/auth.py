@@ -141,6 +141,23 @@ def approve_user(telegram_id: int, phone: str, first_name: str = "", username: s
         c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
 
 
+def free_phone(phone: str) -> List[int]:
+    """Shu raqam bilan ro'yxatdan o'tgan akkount(lar)ni approved_users'dan o'chiradi.
+    Raqam ruxsat ro'yxatida (allowed_phones) qoladi — boshqa akkount qayta ro'yxatdan o'ta oladi.
+    O'chirilgan telegram_id'lar ro'yxatini qaytaradi."""
+    n = normalize_phone(phone)
+    if not n:
+        return []
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        rows = c.execute(
+            "SELECT telegram_id FROM approved_users WHERE phone = ?", (n,)
+        ).fetchall()
+        ids = [r[0] for r in rows]
+        if ids:
+            c.execute("DELETE FROM approved_users WHERE phone = ?", (n,))
+        return ids
+
+
 def get_phone_owner(phone: str) -> Optional[int]:
     """Shu raqam bilan ro'yxatdan o'tgan telegram_id ni qaytaradi (bo'lmasa None)."""
     n = normalize_phone(phone)

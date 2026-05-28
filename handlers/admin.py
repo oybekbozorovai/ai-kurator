@@ -13,6 +13,7 @@ from config import ADMIN_USER_IDS, COURSE_ACCESS_MONTHS, KICK_CHAT_IDS
 from services.auth import (
     add_allowed_phones,
     ban_user,
+    free_phone,
     get_expiring_soon,
     list_allowed_phones,
     list_approved_users,
@@ -50,6 +51,7 @@ HELP_TEXT = (
     "Boshqaruv:\n"
     "/ban_user 123456789 — ban\n"
     "/unban_user 123456789 — banni olib tashlash\n"
+    "/free_phone +998901234567 — raqamni bo'shatish (boshqa akkount qayta kira oladi)\n"
     "/kick_now — muddati o'tganlarni darhol chiqarish (odatda avtomat)\n\n"
     "Yordamchi:\n"
     "/chat_id — joriy chat ID'ini ko'rsatadi (KICK_CHAT_IDS uchun)\n"
@@ -145,6 +147,32 @@ async def cmd_remove_phone(message: Message) -> None:
         return
     ok = remove_allowed_phone(parts[1])
     await message.answer("✅ O'chirildi." if ok else "ℹ️ Bunday raqam topilmadi.")
+
+
+@router.message(Command("free_phone"))
+async def cmd_free_phone(message: Message) -> None:
+    """Raqamni ro'yxatdan o'tgan akkountdan ajratadi — boshqa akkount qayta kira oladi.
+    Raqamning o'zi ruxsat ro'yxatida qoladi."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Ishlatish: /free_phone +998901234567")
+        return
+    freed = free_phone(parts[1])
+    if freed:
+        ids = ", ".join(str(i) for i in freed)
+        await message.answer(
+            f"✅ Raqam bo'shatildi: {parts[1]}\n"
+            f"O'chirilgan akkount(lar): {ids}\n\n"
+            f"Endi bu raqam bilan boshqa Telegram akkaunti qayta ro'yxatdan o'ta oladi.\n"
+            f"(Raqam ruxsat ro'yxatida qoldi — to'liq o'chirish uchun /remove_phone.)"
+        )
+    else:
+        await message.answer(
+            f"ℹ️ Bu raqam bilan hech kim ro'yxatdan o'tmagan: {parts[1]}\n"
+            f"(Ruxsat ro'yxatidan butunlay o'chirish uchun /remove_phone ishlating.)"
+        )
 
 
 @router.message(F.document, F.caption.regexp(r"^/upload_phones\b"))

@@ -35,8 +35,10 @@ EXPIRY_MESSAGE = (
 WARN_MESSAGE = (
     "⏰ Eslatma!\n\n"
     "Sizning kursdagi ruxsat muddatingiz taxminan {days} kundan so'ng tugaydi.\n\n"
-    "Kursni davom ettirmoqchi yoki yangi patokga yozilmoqchi bo'lsangiz, "
-    "ustozga murojaat qiling."
+    "Botdan va kurs guruhidan foydalanishni davom ettirmoqchi bo'lsangiz, "
+    "yana 3 oylik dostupni sotib olishingiz kerak.\n"
+    "💰 Narxi: 490 000 so'm\n\n"
+    "Dostupni uzaytirish uchun ustozga murojaat qiling."
 )
 
 

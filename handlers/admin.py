@@ -12,12 +12,16 @@ from aiogram.types import Message
 from config import ADMIN_USER_IDS, COURSE_ACCESS_MONTHS, KICK_CHAT_IDS
 from services.auth import (
     add_allowed_phones,
+    add_assistant_admin,
     ban_user,
     free_phone,
     get_expiring_soon,
+    is_admin as auth_is_admin,
     list_allowed_phones,
     list_approved_users,
+    list_assistant_admins,
     remove_allowed_phone,
+    remove_assistant_admin,
     stats,
     unban_user,
 )
@@ -27,8 +31,14 @@ logger = logging.getLogger(__name__)
 router = Router(name="admin")
 
 
-def _is_admin(user_id: int) -> bool:
+def _is_super_admin(user_id: int) -> bool:
+    """Asosiy admin — ADMIN_USER_IDS (Railway) dagi. Faqat ular admin qo'sha/o'chira oladi."""
     return user_id in ADMIN_USER_IDS
+
+
+def _is_admin(user_id: int) -> bool:
+    """Asosiy yoki yordamchi admin — odatiy admin buyruqlarini ishlata oladi."""
+    return auth_is_admin(user_id)
 
 
 router.message.filter(F.from_user.id.in_(ADMIN_USER_IDS) | (F.chat.type == ChatType.PRIVATE))
@@ -53,6 +63,10 @@ HELP_TEXT = (
     "/unban_user 123456789 — banni olib tashlash\n"
     "/free_phone +998901234567 — raqamni bo'shatish (boshqa akkount qayta kira oladi)\n"
     "/kick_now — muddati o'tganlarni darhol chiqarish (odatda avtomat)\n\n"
+    "Adminlar (faqat asosiy admin):\n"
+    "/add_admin 123456789 — yordamchi admin qo'shish\n"
+    "/remove_admin 123456789 — yordamchi adminni o'chirish\n"
+    "/list_admins — adminlar ro'yxati\n\n"
     "Yordamchi:\n"
     "/chat_id — joriy chat ID'ini ko'rsatadi (KICK_CHAT_IDS uchun)\n"
     "/myid — o'z ID va admin holatingiz\n"
@@ -319,3 +333,65 @@ async def cmd_unban(message: Message) -> None:
         return
     unban_user(int(parts[1]))
     await message.answer(f"✅ Ban olib tashlandi: {parts[1]}")
+
+
+# ============================================================
+# Yordamchi adminlarni boshqarish — FAQAT asosiy admin
+# ============================================================
+
+@router.message(Command("add_admin"))
+async def cmd_add_admin(message: Message) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    if not _is_super_admin(message.from_user.id):
+        await message.answer("⛔ Faqat asosiy admin yangi admin qo'sha oladi.")
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer(
+            "Ishlatish: /add_admin 123456789\n"
+            "(Yordamchining Telegram ID'si — u botga /myid yozsa ko'rinadi.)"
+        )
+        return
+    new_id = int(parts[1])
+    if new_id in ADMIN_USER_IDS:
+        await message.answer("ℹ️ Bu foydalanuvchi allaqachon asosiy admin.")
+        return
+    added = add_assistant_admin(new_id)
+    if added:
+        await message.answer(
+            f"✅ Yordamchi admin qo'shildi: {new_id}\n"
+            f"Endi u o'quvchi qo'sha/o'chira oladi (lekin admin qo'sha olmaydi)."
+        )
+    else:
+        await message.answer(f"ℹ️ {new_id} allaqachon yordamchi admin.")
+
+
+@router.message(Command("remove_admin"))
+async def cmd_remove_admin(message: Message) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    if not _is_super_admin(message.from_user.id):
+        await message.answer("⛔ Faqat asosiy admin adminni o'chira oladi.")
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer("Ishlatish: /remove_admin 123456789")
+        return
+    ok = remove_assistant_admin(int(parts[1]))
+    await message.answer(
+        "✅ Yordamchi admin o'chirildi." if ok else "ℹ️ Bunday yordamchi admin topilmadi."
+    )
+
+
+@router.message(Command("list_admins"))
+async def cmd_list_admins(message: Message) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    supers = ", ".join(str(x) for x in sorted(ADMIN_USER_IDS)) or "(yo'q)"
+    assistants = list_assistant_admins()
+    a_str = ", ".join(str(x) for x in assistants) if assistants else "(yo'q)"
+    await message.answer(
+        f"👑 Asosiy admin(lar): {supers}\n"
+        f"🤝 Yordamchi adminlar: {a_str}"
+    )

@@ -17,12 +17,12 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
-from config import ADMIN_USER_IDS
 from handlers.utils import split_for_telegram
 from keyboards import MENU_TEXT, home_kb, main_menu_kb
 from services.auth import (
     approve_user,
     get_phone_owner,
+    is_admin,
     is_phone_allowed,
     is_user_approved,
     normalize_phone,
@@ -81,7 +81,7 @@ ALREADY_USED_TEXT = (
 
 
 def _is_allowed(user_id: int) -> bool:
-    return user_id in ADMIN_USER_IDS or is_user_approved(user_id)
+    return is_admin(user_id) or is_user_approved(user_id)
 
 
 async def _request_phone(message: Message, state: FSMContext) -> None:

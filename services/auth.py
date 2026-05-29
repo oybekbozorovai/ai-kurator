@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
-from config import BASE_DIR, COURSE_ACCESS_MONTHS
+from config import ADMIN_USER_IDS, BASE_DIR, COURSE_ACCESS_MONTHS
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,10 @@ def _init_db() -> None:
                 kicked_at INTEGER NOT NULL,
                 reason TEXT,
                 PRIMARY KEY (telegram_id, kicked_at)
+            );
+            CREATE TABLE IF NOT EXISTS assistant_admins (
+                telegram_id INTEGER PRIMARY KEY,
+                added_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
             );
         """)
         # Migratsiya: agar eski DB'da expires_at ustuni yo'q bo'lsa qo'shamiz
@@ -272,6 +276,49 @@ def ban_user(telegram_id: int) -> None:
 def unban_user(telegram_id: int) -> None:
     with _lock, sqlite3.connect(DB_PATH) as c:
         c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
+
+
+# ============================================================
+# Yordamchi adminlar (asosiy admin DB orqali boshqaradi)
+# ============================================================
+
+def add_assistant_admin(telegram_id: int) -> bool:
+    """Yordamchi admin qo'shadi. Yangi qo'shilsa True, allaqachon bor bo'lsa False."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        cur = c.execute(
+            "INSERT OR IGNORE INTO assistant_admins (telegram_id) VALUES (?)",
+            (telegram_id,),
+        )
+        return cur.rowcount > 0
+
+
+def remove_assistant_admin(telegram_id: int) -> bool:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        cur = c.execute(
+            "DELETE FROM assistant_admins WHERE telegram_id = ?", (telegram_id,)
+        )
+        return cur.rowcount > 0
+
+
+def is_assistant_admin(telegram_id: int) -> bool:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return c.execute(
+            "SELECT 1 FROM assistant_admins WHERE telegram_id = ?", (telegram_id,)
+        ).fetchone() is not None
+
+
+def list_assistant_admins() -> List[int]:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return [
+            r[0] for r in c.execute(
+                "SELECT telegram_id FROM assistant_admins ORDER BY added_at"
+            ).fetchall()
+        ]
+
+
+def is_admin(telegram_id: int) -> bool:
+    """Asosiy admin (ADMIN_USER_IDS) yoki yordamchi admin (DB)."""
+    return telegram_id in ADMIN_USER_IDS or is_assistant_admin(telegram_id)
 
 
 def stats() -> Dict[str, int]:

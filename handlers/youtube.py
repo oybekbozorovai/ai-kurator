@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from config import ADMIN_USER_IDS, DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT
+from config import DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT
 from handlers.utils import split_for_telegram
 from keyboards import (
     MENU_TEXT,
@@ -28,7 +28,7 @@ from keyboards import (
     video_seo_menu_kb,
 )
 from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
-from services.auth import is_user_approved
+from services.auth import is_admin, is_user_approved
 from services.gemini import (
     generate_channel_seo,
     generate_image_prompt,
@@ -86,13 +86,13 @@ GUIDE = {
 # ============================================================
 
 def _is_allowed(user_id: int) -> bool:
-    """O'quvchi tasdiqlangan yoki admin."""
-    return user_id in ADMIN_USER_IDS or is_user_approved(user_id)
+    """O'quvchi tasdiqlangan yoki admin (asosiy/yordamchi)."""
+    return is_admin(user_id) or is_user_approved(user_id)
 
 
 def _check_limit(user_id: int, kind: str):
     """Kunlik limit tekshiruvi. (ruxsat_bormi, qolgan_son) qaytaradi."""
-    if user_id in ADMIN_USER_IDS:
+    if is_admin(user_id):
         return True, -1  # adminlarga limit yo'q
     limit = DAILY_IMAGE_LIMIT if kind == "image" else DAILY_TEXT_LIMIT
     used = count_today(user_id, kind)

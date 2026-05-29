@@ -59,6 +59,10 @@ def _init_db() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+            CREATE TABLE IF NOT EXISTS reminder_optout (
+                telegram_id INTEGER PRIMARY KEY,
+                disabled_at INTEGER NOT NULL
+            );
         """)
         # Migratsiya: agar eski DB'da expires_at ustuni yo'q bo'lsa qo'shamiz
         for table in ("allowed_phones", "approved_users"):
@@ -246,6 +250,32 @@ def list_all_user_ids() -> List[int]:
     """Barcha tasdiqlangan o'quvchilarning telegram_id'lari (e'lon yuborish uchun)."""
     with _lock, sqlite3.connect(DB_PATH) as c:
         return [r[0] for r in c.execute("SELECT telegram_id FROM approved_users").fetchall()]
+
+
+def disable_reminders(telegram_id: int) -> None:
+    """O'quvchi kunlik eslatmalarni o'chiradi."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute(
+            "INSERT OR IGNORE INTO reminder_optout (telegram_id, disabled_at) VALUES (?, ?)",
+            (telegram_id, int(time.time())),
+        )
+
+
+def enable_reminders(telegram_id: int) -> None:
+    """O'quvchi kunlik eslatmalarni qayta yoqadi."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute("DELETE FROM reminder_optout WHERE telegram_id = ?", (telegram_id,))
+
+
+def list_reminder_user_ids() -> List[int]:
+    """Kunlik eslatma yoqilgan o'quvchilar (o'chirmaganlar)."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return [
+            r[0] for r in c.execute(
+                "SELECT telegram_id FROM approved_users "
+                "WHERE telegram_id NOT IN (SELECT telegram_id FROM reminder_optout)"
+            ).fetchall()
+        ]
 
 
 def get_setting(key: str) -> Optional[str]:

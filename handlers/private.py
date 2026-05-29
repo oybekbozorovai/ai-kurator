@@ -13,6 +13,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     Message,
     ReplyKeyboardRemove,
 )
@@ -21,6 +23,8 @@ from handlers.utils import split_for_telegram
 from keyboards import MENU_TEXT, home_kb, main_menu_kb
 from services.auth import (
     approve_user,
+    disable_reminders,
+    enable_reminders,
     get_phone_owner,
     is_admin,
     is_phone_allowed,
@@ -253,6 +257,38 @@ async def qa_answer(message: Message) -> None:
         await message.answer(
             part, reply_markup=home_kb() if i == len(parts) - 1 else None
         )
+
+
+# ============================================================
+# Kunlik eslatmani yoqish/o'chirish
+# ============================================================
+
+def _reminders_kb(enabled: bool) -> InlineKeyboardMarkup:
+    if enabled:
+        btn = InlineKeyboardButton(text="🔕 Eslatmalarni o'chirish", callback_data="reminders:off")
+    else:
+        btn = InlineKeyboardButton(text="🔔 Eslatmalarni qayta yoqish", callback_data="reminders:on")
+    return InlineKeyboardMarkup(inline_keyboard=[[btn]])
+
+
+@router.callback_query(F.data == "reminders:off")
+async def cb_reminders_off(callback: CallbackQuery) -> None:
+    disable_reminders(callback.from_user.id)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=_reminders_kb(enabled=False))
+    except Exception:
+        pass
+    await callback.answer("🔕 Kunlik eslatmalar o'chirildi.", show_alert=True)
+
+
+@router.callback_query(F.data == "reminders:on")
+async def cb_reminders_on(callback: CallbackQuery) -> None:
+    enable_reminders(callback.from_user.id)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=_reminders_kb(enabled=True))
+    except Exception:
+        pass
+    await callback.answer("🔔 Kunlik eslatmalar qayta yoqildi.", show_alert=True)
 
 
 # ============================================================

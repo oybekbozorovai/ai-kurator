@@ -9,13 +9,14 @@ from typing import List
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import KICK_CHAT_IDS
 from services.auth import (
     get_expired_users,
     get_setting,
     get_users_to_warn,
-    list_all_user_ids,
+    list_reminder_user_ids,
     mark_user_kicked,
     mark_warned,
     set_setting,
@@ -109,11 +110,14 @@ async def maybe_send_daily_reminder(bot: Bot) -> int:
     if get_setting("last_daily_reminder") == today:
         return 0  # bugun allaqachon yuborilgan
 
-    ids = list_all_user_ids()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔕 Eslatmalarni o'chirish", callback_data="reminders:off")
+    ]])
+    ids = list_reminder_user_ids()
     sent = 0
     for uid in ids:
         try:
-            await bot.send_message(uid, DAILY_REMINDER_MESSAGE)
+            await bot.send_message(uid, DAILY_REMINDER_MESSAGE, reply_markup=kb)
             sent += 1
         except (TelegramBadRequest, TelegramForbiddenError):
             pass  # bloklagan/o'chgan — normal

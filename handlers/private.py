@@ -83,6 +83,14 @@ ALREADY_USED_TEXT = (
     "Agar bu sizning raqamingiz bo'lsa-yu, kira olmayotgan bo'lsangiz — ustozga murojaat qiling."
 )
 
+ROADMAP_TEXT = (
+    "🗺 Kurs yo'l xaritasi\n\n"
+    "1️⃣ Modullarni tartib bilan ko'ring (1-moduldan boshlang)\n"
+    "2️⃣ Har darsdan keyin topshiriqni bajaring\n"
+    "3️⃣ Savol bo'lsa — 🎓 «Kurs bo'yicha savol»\n\n"
+    "📌 Har kuni kamida 1 dars + 1 amaliyot bo'lishi kerak"
+)
+
 
 def _is_allowed(user_id: int) -> bool:
     return is_admin(user_id) or is_user_approved(user_id)
@@ -106,6 +114,7 @@ async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) 
         f"✅ Tasdiqlandi! Xush kelibsiz, {message.from_user.first_name or 'talaba'}.",
         reply_markup=ReplyKeyboardRemove(),
     )
+    await message.answer(ROADMAP_TEXT)
     await _show_menu(message)
     logger.info("Yangi talaba tasdiqlandi: %s (id=%s)", phone, message.from_user.id)
 

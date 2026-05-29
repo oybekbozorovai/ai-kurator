@@ -55,6 +55,10 @@ def _init_db() -> None:
                 telegram_id INTEGER PRIMARY KEY,
                 warned_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS bot_state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
         """)
         # Migratsiya: agar eski DB'da expires_at ustuni yo'q bo'lsa qo'shamiz
         for table in ("allowed_phones", "approved_users"):
@@ -242,6 +246,20 @@ def list_all_user_ids() -> List[int]:
     """Barcha tasdiqlangan o'quvchilarning telegram_id'lari (e'lon yuborish uchun)."""
     with _lock, sqlite3.connect(DB_PATH) as c:
         return [r[0] for r in c.execute("SELECT telegram_id FROM approved_users").fetchall()]
+
+
+def get_setting(key: str) -> Optional[str]:
+    """Botning kichik holatini o'qiydi (masalan oxirgi kunlik eslatma sanasi)."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        row = c.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute(
+            "INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)", (key, value)
+        )
 
 
 def get_users_to_warn(days: int = 3) -> List[Tuple]:

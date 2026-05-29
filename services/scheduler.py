@@ -13,15 +13,31 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from config import KICK_CHAT_IDS
 from services.auth import (
     get_expired_users,
+    get_setting,
     get_users_to_warn,
+    list_all_user_ids,
     mark_user_kicked,
     mark_warned,
+    set_setting,
 )
 
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL = 60 * 60  # har 1 soatda
 WARN_BEFORE_DAYS = 3  # muddat tugashidan necha kun oldin ogohlantirish
+
+# Kunlik eslatma — har kuni shu soatdan keyin (UTC). 14 UTC = 19:00 Toshkent.
+DAILY_REMINDER_HOUR_UTC = 14
+DAILY_REMINDER_INTERVAL = 30 * 60  # har 30 daqiqada tekshiradi
+
+DAILY_REMINDER_MESSAGE = (
+    "📚 Bugungi cheklist:\n\n"
+    "✅ Bugungi video darsni ko'rdingizmi?\n"
+    "✅ Dars bo'yicha qaydlar/konspekt qildingizmi?\n"
+    "✅ Berilgan topshiriqni bajardingizmi?\n"
+    "✅ Amaliyot — video tayyorlash ustida ishladingizmi?\n\n"
+    "Har kuni 1 qadam tashlang. Savol bo'lsa, botdan 🎓 «Kurs bo'yicha savol» orqali so'rang."
+)
 
 
 EXPIRY_MESSAGE = (
@@ -72,6 +88,42 @@ async def warn_expiring_soon(bot: Bot) -> int:
         await asyncio.sleep(0.1)
     logger.info("Muddat ogohlantirishi yuborildi: %d ta", warned)
     return warned
+
+
+async def daily_reminder_loop(bot: Bot) -> None:
+    """Har kuni bir marta o'quvchilarga cheklist eslatmasini yuboradi."""
+    while True:
+        try:
+            await maybe_send_daily_reminder(bot)
+        except Exception as e:
+            logger.exception("Kunlik eslatma xatolik: %s", e)
+        await asyncio.sleep(DAILY_REMINDER_INTERVAL)
+
+
+async def maybe_send_daily_reminder(bot: Bot) -> int:
+    """Belgilangan soatdan keyin, kuniga faqat bir marta yuboradi (qayta ishga tushsa ham)."""
+    now = datetime.utcnow()
+    if now.hour < DAILY_REMINDER_HOUR_UTC:
+        return 0
+    today = now.strftime("%Y-%m-%d")
+    if get_setting("last_daily_reminder") == today:
+        return 0  # bugun allaqachon yuborilgan
+
+    ids = list_all_user_ids()
+    sent = 0
+    for uid in ids:
+        try:
+            await bot.send_message(uid, DAILY_REMINDER_MESSAGE)
+            sent += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            pass  # bloklagan/o'chgan — normal
+        except Exception as e:
+            logger.warning("Kunlik eslatma yuborilmadi (user=%s): %s", uid, e)
+        await asyncio.sleep(0.05)
+
+    set_setting("last_daily_reminder", today)
+    logger.info("Kunlik eslatma yuborildi: %d ta", sent)
+    return sent
 
 
 async def kick_expired_once(bot: Bot) -> int:

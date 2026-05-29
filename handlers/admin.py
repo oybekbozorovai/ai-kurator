@@ -1,4 +1,5 @@
 """Admin uchun buyruqlar — telefon ro'yxati, statistika, muddatlar va auto-kick boshqaruvi."""
+import asyncio
 import io
 import logging
 import re
@@ -6,8 +7,16 @@ from datetime import datetime, timedelta
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from config import ADMIN_USER_IDS, COURSE_ACCESS_MONTHS, KICK_CHAT_IDS
 from services.auth import (
@@ -18,6 +27,7 @@ from services.auth import (
     get_expiring_soon,
     is_admin as auth_is_admin,
     list_allowed_phones,
+    list_all_user_ids,
     list_approved_users,
     list_assistant_admins,
     remove_allowed_phone,
@@ -29,6 +39,11 @@ from services.scheduler import kick_expired_once
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
+
+
+class BroadcastStates(StatesGroup):
+    waiting_message = State()
+    confirm = State()
 
 
 def _is_super_admin(user_id: int) -> bool:
@@ -59,6 +74,7 @@ HELP_TEXT = (
     "  /upload_phones 6 — 6 oy\n"
     "  /upload_phones 0 — cheksiz\n\n"
     "Boshqaruv:\n"
+    "/broadcast — barcha o'quvchilarga e'lon yuborish\n"
     "/ban_user 123456789 — ban\n"
     "/unban_user 123456789 — banni olib tashlash\n"
     "/free_phone +998901234567 — raqamni bo'shatish (boshqa akkount qayta kira oladi)\n"
@@ -394,4 +410,80 @@ async def cmd_list_admins(message: Message) -> None:
     await message.answer(
         f"👑 Asosiy admin(lar): {supers}\n"
         f"🤝 Yordamchi adminlar: {a_str}"
+    )
+
+
+# ============================================================
+# E'lon yuborish (broadcast) — barcha o'quvchilarga
+# ============================================================
+
+@router.message(Command("broadcast"))
+async def cmd_broadcast(message: Message, state: FSMContext) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    await state.set_state(BroadcastStates.waiting_message)
+    await message.answer(
+        "📢 Barcha o'quvchilarga yuboriladigan xabarni yozing.\n"
+        "Bekor qilish: /cancel"
+    )
+
+
+@router.message(BroadcastStates.waiting_message, Command("cancel"))
+async def broadcast_cancel(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("❌ E'lon bekor qilindi.")
+
+
+@router.message(BroadcastStates.waiting_message, F.text)
+async def broadcast_preview(message: Message, state: FSMContext) -> None:
+    await state.update_data(text=message.text)
+    await state.set_state(BroadcastStates.confirm)
+    count = len(list_all_user_ids())
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, yuborish", callback_data="bcast:yes"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data="bcast:no"),
+    ]])
+    await message.answer(
+        f"Quyidagi xabar {count} ta o'quvchiga yuboriladi:\n\n"
+        f"———\n{message.text}\n———\n\n"
+        f"Tasdiqlaysizmi?",
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(BroadcastStates.confirm, F.data == "bcast:no")
+async def broadcast_no(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text("❌ E'lon bekor qilindi.")
+    await callback.answer()
+
+
+@router.callback_query(BroadcastStates.confirm, F.data == "bcast:yes")
+async def broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    data = await state.get_data()
+    text = data.get("text", "")
+    await state.clear()
+    await callback.answer()
+    if not text:
+        await callback.message.edit_text("⚠️ Xabar bo'sh, bekor qilindi.")
+        return
+    await callback.message.edit_text("📤 Yuborilmoqda...")
+
+    ids = list_all_user_ids()
+    sent = 0
+    failed = 0
+    for uid in ids:
+        try:
+            await bot.send_message(uid, text)
+            sent += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            failed += 1  # bloklagan yoki akkount o'chgan
+        except Exception as e:
+            failed += 1
+            logger.warning("E'lon yuborilmadi (user=%s): %s", uid, e)
+        await asyncio.sleep(0.05)  # Telegram limitlariga moslashish
+
+    await callback.message.answer(
+        f"✅ E'lon yuborildi: {sent} ta\n"
+        f"❌ Yetib bormadi: {failed} ta (bloklagan/o'chirilgan)"
     )

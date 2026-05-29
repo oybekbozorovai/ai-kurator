@@ -3,6 +3,7 @@
 Bot soatda bir marta tekshiradi va konfiguratsiya qilingan kanal/guruhlardan chiqarib tashlaydi."""
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import List
 
@@ -10,12 +11,17 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 from config import KICK_CHAT_IDS
-from services.auth import get_expired_users, mark_user_kicked
+from services.auth import (
+    get_expired_users,
+    get_users_to_warn,
+    mark_user_kicked,
+    mark_warned,
+)
 
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL = 60 * 60  # har 1 soatda
-NOTIFY_BEFORE_KICK_DAYS = 0  # 0 = darhol chiqar (kerak bo'lsa keyinroq qo'shaman)
+WARN_BEFORE_DAYS = 3  # muddat tugashidan necha kun oldin ogohlantirish
 
 
 EXPIRY_MESSAGE = (
@@ -26,15 +32,44 @@ EXPIRY_MESSAGE = (
     "ustozga murojaat qiling."
 )
 
+WARN_MESSAGE = (
+    "⏰ Eslatma!\n\n"
+    "Sizning kursdagi ruxsat muddatingiz taxminan {days} kundan so'ng tugaydi.\n\n"
+    "Kursni davom ettirmoqchi yoki yangi patokga yozilmoqchi bo'lsangiz, "
+    "ustozga murojaat qiling."
+)
+
 
 async def kick_expired_loop(bot: Bot) -> None:
-    """Cheksiz tsikl — har soatda muddati o'tganlarni chiqaradi."""
+    """Cheksiz tsikl — har soatda ogohlantiradi va muddati o'tganlarni chiqaradi."""
     while True:
         try:
+            await warn_expiring_soon(bot)
             await kick_expired_once(bot)
         except Exception as e:
             logger.exception("Expiry tekshirish xatolik: %s", e)
         await asyncio.sleep(CHECK_INTERVAL)
+
+
+async def warn_expiring_soon(bot: Bot) -> int:
+    """Muddati yaqinlashganlarni (default 3 kun) bir marta ogohlantiradi."""
+    users = get_users_to_warn(WARN_BEFORE_DAYS)
+    if not users:
+        return 0
+    warned = 0
+    for telegram_id, phone, first_name, expires_at in users:
+        days_left = max(1, round((expires_at - time.time()) / 86400))
+        try:
+            await bot.send_message(telegram_id, WARN_MESSAGE.format(days=days_left))
+            warned += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            pass  # bloklagan bo'lishi mumkin — normal
+        except Exception as e:
+            logger.warning("Ogohlantirish yuborib bo'lmadi (user=%s): %s", telegram_id, e)
+        mark_warned(telegram_id)  # qayta ogohlantirmaslik uchun
+        await asyncio.sleep(0.1)
+    logger.info("Muddat ogohlantirishi yuborildi: %d ta", warned)
+    return warned
 
 
 async def kick_expired_once(bot: Bot) -> int:

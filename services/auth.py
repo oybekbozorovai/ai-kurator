@@ -51,6 +51,10 @@ def _init_db() -> None:
                 telegram_id INTEGER PRIMARY KEY,
                 added_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
             );
+            CREATE TABLE IF NOT EXISTS expiry_warned (
+                telegram_id INTEGER PRIMARY KEY,
+                warned_at INTEGER NOT NULL
+            );
         """)
         # Migratsiya: agar eski DB'da expires_at ustuni yo'q bo'lsa qo'shamiz
         for table in ("allowed_phones", "approved_users"):
@@ -143,6 +147,7 @@ def approve_user(telegram_id: int, phone: str, first_name: str = "", username: s
             (telegram_id, n, first_name, username, now, expires_at),
         )
         c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
+        c.execute("DELETE FROM expiry_warned WHERE telegram_id = ?", (telegram_id,))
 
 
 def free_phone(phone: str) -> List[int]:
@@ -233,6 +238,34 @@ def list_allowed_phones(limit: int = 500) -> List[Tuple]:
         ).fetchall()
 
 
+def list_all_user_ids() -> List[int]:
+    """Barcha tasdiqlangan o'quvchilarning telegram_id'lari (e'lon yuborish uchun)."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return [r[0] for r in c.execute("SELECT telegram_id FROM approved_users").fetchall()]
+
+
+def get_users_to_warn(days: int = 3) -> List[Tuple]:
+    """Muddati `days` kun ichida tugaydigan, lekin hali ogohlantirilmaganlar."""
+    now = int(time.time())
+    deadline = now + days * 24 * 3600
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return c.execute(
+            "SELECT telegram_id, phone, first_name, expires_at FROM approved_users "
+            "WHERE expires_at > ? AND expires_at < ? "
+            "AND telegram_id NOT IN (SELECT telegram_id FROM expiry_warned)",
+            (now, deadline),
+        ).fetchall()
+
+
+def mark_warned(telegram_id: int) -> None:
+    """Ogohlantirilgan deb belgilaydi — qayta ogohlantirmaslik uchun."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute(
+            "INSERT OR IGNORE INTO expiry_warned (telegram_id, warned_at) VALUES (?, ?)",
+            (telegram_id, int(time.time())),
+        )
+
+
 def get_expired_users() -> List[Tuple]:
     """Muddati o'tgan tasdiqlangan foydalanuvchilar."""
     now = int(time.time())
@@ -265,6 +298,7 @@ def mark_user_kicked(telegram_id: int, reason: str = "expired") -> None:
             (telegram_id, int(time.time()), reason),
         )
         c.execute("DELETE FROM approved_users WHERE telegram_id = ?", (telegram_id,))
+        c.execute("DELETE FROM expiry_warned WHERE telegram_id = ?", (telegram_id,))
 
 
 def ban_user(telegram_id: int) -> None:

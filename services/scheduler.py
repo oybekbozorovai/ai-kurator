@@ -36,9 +36,9 @@ WARN_MESSAGE = (
     "⏰ Eslatma!\n\n"
     "Sizning kursdagi ruxsat muddatingiz taxminan {days} kundan so'ng tugaydi.\n\n"
     "Botdan va kurs guruhidan foydalanishni davom ettirmoqchi bo'lsangiz, "
-    "yana 3 oylik dostupni sotib olishingiz kerak.\n"
+    "yana 3 oylik Botda qolishni sotib olishingiz kerak.\n"
     "💰 Narxi: 490 000 so'm\n\n"
-    "Dostupni uzaytirish uchun ustozga murojaat qiling."
+    "Botda qolishni uzaytirish uchun +9985551101031 qabul bo'limiga murojaat qiling."
 )
 
 

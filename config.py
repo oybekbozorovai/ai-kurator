@@ -36,6 +36,10 @@ TELEGRAM_BOT_TOKEN = _clean(os.getenv("TELEGRAM_BOT_TOKEN", ""))
 GEMINI_API_KEY = _clean(os.getenv("GEMINI_API_KEY", ""))
 GEMINI_MODEL = _clean(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 
+# --- Supabase (yagona auth/roster manbai — A.Y.P.I Platforma bilan umumiy) ---
+SUPABASE_URL = _clean(os.getenv("SUPABASE_URL", "")).rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = _clean(os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+
 # Qo'shtirnoq, probel, vergul yoki nuqta-vergul — qanday yozilsa ham ID'larni ajratadi
 ADMIN_USER_IDS = {int(x) for x in re.findall(r"\d+", os.getenv("ADMIN_USER_IDS", ""))}
 
@@ -74,3 +78,8 @@ if ":" not in TELEGRAM_BOT_TOKEN or not TELEGRAM_BOT_TOKEN.split(":")[0].isdigit
     )
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY is not set")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError(
+        "SUPABASE_URL va SUPABASE_SERVICE_ROLE_KEY o'rnatilishi shart "
+        "(auth Supabase orqali ishlaydi). Railway Variables'da to'ldiring."
+    )

@@ -1,9 +1,10 @@
-"""Admin uchun buyruqlar — telefon ro'yxati, statistika, muddatlar va auto-kick boshqaruvi."""
+"""Admin uchun buyruqlar — statistika, muddatlar, ban va auto-kick boshqaruvi.
+
+Eslatma: ruxsat etilgan raqamlar A.Y.P.I dashboard orqali patokka qo'shiladi
+(allowed_contacts). Bot ichida raqam qo'shish/o'chirish buyruqlari yo'q."""
 import asyncio
-import io
 import logging
-import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
@@ -18,9 +19,8 @@ from aiogram.types import (
     Message,
 )
 
-from config import ADMIN_USER_IDS, COURSE_ACCESS_MONTHS, KICK_CHAT_IDS
+from config import ADMIN_USER_IDS, KICK_CHAT_IDS
 from services.auth import (
-    add_allowed_phones,
     add_assistant_admin,
     ban_user,
     free_phone,
@@ -30,7 +30,6 @@ from services.auth import (
     list_all_user_ids,
     list_approved_users,
     list_assistant_admins,
-    remove_allowed_phone,
     remove_assistant_admin,
     stats,
     unban_user,
@@ -64,15 +63,9 @@ HELP_TEXT = (
     "Statistika va ko'rish:\n"
     "/admin_stats — umumiy statistika\n"
     "/list_users — ro'yxatdan o'tgan (kontakt ulashgan) talabalar\n"
-    "/list_phones — ruxsat ro'yxatiga qo'shilgan raqamlar\n"
+    "/list_phones — patokka biriktirilgan ruxsat raqamlari\n"
     "/list_expiring — yaqin 7 kun ichida muddati tugaydiganlar\n\n"
-    "Telefon ro'yxati:\n"
-    f"/add_phone +998901234567 [oy] — bitta raqam (default: {COURSE_ACCESS_MONTHS} oy, 0 = cheksiz)\n"
-    "/remove_phone +998901234567 — raqamni o'chirish\n"
-    "Fayl yuklash: txt/csv faylni caption bilan yuboring:\n"
-    f"  /upload_phones — default {COURSE_ACCESS_MONTHS} oy\n"
-    "  /upload_phones 6 — 6 oy\n"
-    "  /upload_phones 0 — cheksiz\n\n"
+    "ℹ️ Raqamlar A.Y.P.I dashboard orqali patokka qo'shiladi.\n\n"
     "Boshqaruv:\n"
     "/broadcast — barcha o'quvchilarga e'lon yuborish\n"
     "/ban_user 123456789 — ban\n"
@@ -134,49 +127,8 @@ async def cmd_admin_stats(message: Message) -> None:
         f"• Banlangan: {s['banned_users']}\n"
         f"• Muddati o'tgan (chiqarish kutilmoqda): {s['expired_pending_kick']}\n"
         f"• Tarixiy chiqarilganlar: {s['kick_log']}\n\n"
-        f"⚙️ Default muddat: {COURSE_ACCESS_MONTHS} oy\n"
         f"🚪 Kick chatlar: {kick_chats}"
     )
-
-
-def _parse_months(arg: str, default: int = COURSE_ACCESS_MONTHS) -> int:
-    """Captiondan/argumentdan oy sonini olish. Bo'sh yoki noto'g'ri → default."""
-    if not arg:
-        return default
-    arg = arg.strip()
-    if arg.isdigit():
-        return int(arg)
-    return default
-
-
-@router.message(Command("add_phone"))
-async def cmd_add_phone(message: Message) -> None:
-    if not _is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split()
-    if len(parts) < 2:
-        await message.answer(
-            f"Ishlatish: /add_phone +998901234567 [oy]\n"
-            f"Default: {COURSE_ACCESS_MONTHS} oy. 0 = cheksiz."
-        )
-        return
-    phone = parts[1]
-    months = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else COURSE_ACCESS_MONTHS
-    n = add_allowed_phones([phone], months=months)
-    expiry_text = f"{months} oy ruxsat" if months > 0 else "cheksiz ruxsat"
-    await message.answer(f"✅ Qo'shildi: {n} ta yangi raqam ({expiry_text}).")
-
-
-@router.message(Command("remove_phone"))
-async def cmd_remove_phone(message: Message) -> None:
-    if not _is_admin(message.from_user.id):
-        return
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) < 2:
-        await message.answer("Ishlatish: /remove_phone +998901234567")
-        return
-    ok = remove_allowed_phone(parts[1])
-    await message.answer("✅ O'chirildi." if ok else "ℹ️ Bunday raqam topilmadi.")
 
 
 @router.message(Command("free_phone"))
@@ -203,45 +155,6 @@ async def cmd_free_phone(message: Message) -> None:
             f"ℹ️ Bu raqam bilan hech kim ro'yxatdan o'tmagan: {parts[1]}\n"
             f"(Ruxsat ro'yxatidan butunlay o'chirish uchun /remove_phone ishlating.)"
         )
-
-
-@router.message(F.document, F.caption.regexp(r"^/upload_phones\b"))
-async def handle_phone_file(message: Message, bot: Bot) -> None:
-    if not _is_admin(message.from_user.id):
-        return
-    doc = message.document
-    if not doc:
-        return
-    if doc.file_size and doc.file_size > 5 * 1024 * 1024:
-        await message.answer("❌ Fayl 5 MB dan kichik bo'lsin.")
-        return
-
-    # Captiondan oy sonini olish: /upload_phones 4
-    caption = message.caption or ""
-    m = re.match(r"^/upload_phones\s*(\d*)\s*", caption)
-    months_str = m.group(1) if m else ""
-    months = int(months_str) if months_str else COURSE_ACCESS_MONTHS
-
-    file = await bot.get_file(doc.file_id)
-    buf = io.BytesIO()
-    await bot.download_file(file.file_path, destination=buf)
-    text = buf.getvalue().decode("utf-8", errors="ignore")
-
-    phones = [
-        line.strip() for line in text.replace(";", "\n").replace(",", "\n").splitlines()
-        if line.strip() and not line.strip().lower().startswith("phone")
-    ]
-    if not phones:
-        await message.answer("❌ Faylda raqam topilmadi.")
-        return
-
-    n = add_allowed_phones(phones, months=months)
-    expiry_text = f"{months} oy ruxsat" if months > 0 else "cheksiz ruxsat"
-    await message.answer(
-        f"✅ {n} ta yangi raqam qo'shildi (jami yuklangani: {len(phones)} ta).\n"
-        f"⏱ Muddat: {expiry_text}\n"
-        f"Takroriy raqamlar avtomatik o'tkazib yuborildi."
-    )
 
 
 @router.message(Command("list_users"))
@@ -277,7 +190,7 @@ async def cmd_list_phones(message: Message) -> None:
     if not phones:
         await message.answer(
             "Ruxsat ro'yxati bo'sh.\n"
-            "/add_phone +998901234567 bilan raqam qo'shing."
+            "Raqamlarni A.Y.P.I dashboard orqali patokka qo'shing."
         )
         return
 

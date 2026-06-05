@@ -1,42 +1,45 @@
-"""Foydalanuvchi autentifikatsiyasi: telefon ro'yxati + tasdiqlangan foydalanuvchilar.
+"""Foydalanuvchi autentifikatsiyasi — Supabase asosiy manba (A.Y.P.I Platforma bilan umumiy baza).
 
-Muddatli ruxsat (4 oy default) — ekspirit bo'lgach avtomatik chiqarib yuboriladi."""
+Drop-in: funksiya imzolari o'zgarmagan. Ruxsat/roster/muddat — Supabase'dan:
+  - allowed_contacts : ruxsat etilgan raqamlar (patok bo'yicha)
+  - users            : ro'yxatdan o'tgan o'quvchilar (phone, cohort_id)
+  - cohorts          : patok (ends_at, is_active) → muddat shu yerda
+
+Bot-faqat operatsion holat (ban, kick log, eslatma, sozlamalar) kichik lokal
+`data/botstate.db` (sqlite) da saqlanadi — Supabase sxemasini o'zgartirmaslik uchun.
+
+Telefon E.164 formatda: "+998XXXXXXXXX" (Supabase kanonik). normalize_phone
+A.Y.P.I normalizePhone bilan bir xil natija beradi.
+"""
 import logging
 import sqlite3
 import time
-from pathlib import Path
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
-from config import ADMIN_USER_IDS, BASE_DIR, COURSE_ACCESS_MONTHS
+from config import ADMIN_USER_IDS, BASE_DIR
+from services import supabase_db as sb
 
 logger = logging.getLogger(__name__)
 
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DATA_DIR / "auth.db"
+DB_PATH = DATA_DIR / "botstate.db"
 
 _lock = Lock()
 
-DAYS_PER_MONTH = 30
+# Supabase'da admin hisoblangan rollar (is_admin shu rollarni ham qabul qiladi)
+ADMIN_ROLES = {"owner", "admin"}
 
+
+# ============================================================
+# Lokal bot holati (faqat shu bot uchun — Supabase'da emas)
+# ============================================================
 
 def _init_db() -> None:
     with sqlite3.connect(DB_PATH) as c:
         c.executescript("""
-            CREATE TABLE IF NOT EXISTS allowed_phones (
-                phone TEXT PRIMARY KEY,
-                added_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-                expires_at INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS approved_users (
-                telegram_id INTEGER PRIMARY KEY,
-                phone TEXT NOT NULL,
-                first_name TEXT,
-                username TEXT,
-                joined_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-                expires_at INTEGER NOT NULL DEFAULT 0
-            );
             CREATE TABLE IF NOT EXISTS banned_users (
                 telegram_id INTEGER PRIMARY KEY,
                 banned_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
@@ -64,295 +67,400 @@ def _init_db() -> None:
                 disabled_at INTEGER NOT NULL
             );
         """)
-        # Migratsiya: agar eski DB'da expires_at ustuni yo'q bo'lsa qo'shamiz
-        for table in ("allowed_phones", "approved_users"):
-            cols = [row[1] for row in c.execute(f"PRAGMA table_info({table})").fetchall()]
-            if "expires_at" not in cols:
-                c.execute(f"ALTER TABLE {table} ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0")
-                logger.info("Migratsiya: %s ga expires_at qo'shildi", table)
 
 
 _init_db()
 
 
+# ============================================================
+# Telefon normalizatsiyasi (A.Y.P.I normalizePhone bilan bir xil)
+# ============================================================
+
 def normalize_phone(phone: str) -> str:
-    digits = "".join(c for c in phone if c.isdigit())
+    """E.164 ga keltiradi: "+998XXXXXXXXX". Tushunarsiz bo'lsa "" qaytaradi."""
+    if not phone:
+        return ""
+    digits = "".join(ch for ch in str(phone) if ch.isdigit())
     if not digits:
         return ""
-    if len(digits) == 9 and digits[0] == "9":
-        return "998" + digits
-    return digits
+    n = len(digits)
+    if n == 9 and digits[0] == "9":
+        return "+998" + digits
+    if n == 12 and digits.startswith("998"):
+        return "+" + digits
+    if n == 13 and digits.startswith("9998"):  # ikki marta 9 yozib yuborilgan
+        return "+" + digits[1:]
+    if 10 <= n <= 15:
+        return "+" + digits
+    return ""
 
 
-def _months_to_timestamp(months: int) -> int:
-    """N oy keyingi unix timestamp. months=0 → 0 (cheksiz)."""
-    if months <= 0:
+def _strip_plus(phone: Optional[str]) -> str:
+    """Admin/scheduler matnlari `+{phone}` ko'rinishida chop etadi —
+    qaytariladigan tuple'larda '+' ni olib tashlaymiz (ikki marta '+' bo'lmasin)."""
+    if not phone:
+        return ""
+    return phone[1:] if phone.startswith("+") else phone
+
+
+# ============================================================
+# Vaqt / sana yordamchilari
+# ============================================================
+
+def _now() -> int:
+    return int(time.time())
+
+
+def _date_to_ts(date_str: Optional[str]) -> int:
+    """cohorts.ends_at ("2026-09-01" yoki ISO) → unix timestamp (kun oxiri, UTC).
+    Bo'sh/yo'q bo'lsa 0 (cheksiz)."""
+    if not date_str:
         return 0
-    return int(time.time()) + months * DAYS_PER_MONTH * 24 * 3600
+    s = str(date_str).strip()
+    try:
+        if "T" in s:
+            s = s.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+        else:
+            dt = datetime.fromisoformat(s + "T23:59:59+00:00")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except (ValueError, TypeError):
+        logger.warning("ends_at parse bo'lmadi: %r", date_str)
+        return 0
 
 
-def add_allowed_phones(phones: List[str], months: int = COURSE_ACCESS_MONTHS) -> int:
-    """Telefon ro'yxatiga muddatli ruxsat bilan qo'shadi.
-    months=0 → cheksiz, months=4 → 4 oy."""
-    expires_at = _months_to_timestamp(months)
-    now = int(time.time())
-    added = 0
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        for p in phones:
-            n = normalize_phone(p)
-            if not n:
-                continue
-            cur = c.execute(
-                "INSERT OR REPLACE INTO allowed_phones (phone, added_at, expires_at) "
-                "VALUES (?, ?, ?)",
-                (n, now, expires_at),
-            )
-            if cur.rowcount:
-                added += 1
-    return added
+def _cohort_expiry(cohort: Optional[dict]) -> Tuple[int, bool]:
+    """Embedded cohort dict'idan (expires_ts, is_active) qaytaradi.
+    cohort yo'q → (0, True) = cheksiz/faol (admin/owner kabi)."""
+    if not cohort:
+        return 0, True
+    return _date_to_ts(cohort.get("ends_at")), bool(cohort.get("is_active", True))
 
 
-def remove_allowed_phone(phone: str) -> bool:
-    n = normalize_phone(phone)
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        cur = c.execute("DELETE FROM allowed_phones WHERE phone = ?", (n,))
-        return cur.rowcount > 0
-
+# ============================================================
+# Ruxsat ro'yxati (allowed_contacts) — Supabase
+# ============================================================
 
 def is_phone_allowed(phone: str) -> bool:
+    """Raqam patokka biriktirilgan VA patok faol/muddati o'tmaganmi."""
     n = normalize_phone(phone)
     if not n:
         return False
-    now = int(time.time())
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        row = c.execute(
-            "SELECT expires_at FROM allowed_phones WHERE phone = ?",
-            (n,),
-        ).fetchone()
-        if not row:
-            return False
-        expires_at = row[0]
-        # 0 = cheksiz; aks holda muddat tekshiriladi
-        if expires_at == 0:
+    rows = sb.select(
+        "allowed_contacts",
+        f"phone=eq.{sb.quote(n)}&select=cohort_id,cohort:cohorts(ends_at,is_active)",
+    )
+    if not rows:
+        return False
+    now = _now()
+    for r in rows:
+        exp, active = _cohort_expiry(r.get("cohort"))
+        if r.get("cohort_id") is None:  # patoksiz ruxsat — cheksiz
             return True
-        return now < expires_at
-
-
-def approve_user(telegram_id: int, phone: str, first_name: str = "", username: str = "") -> None:
-    n = normalize_phone(phone)
-    now = int(time.time())
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        # Telefon ro'yxatidan expires_at ni olamiz
-        row = c.execute(
-            "SELECT expires_at FROM allowed_phones WHERE phone = ?",
-            (n,),
-        ).fetchone()
-        expires_at = row[0] if row else 0
-        c.execute(
-            """INSERT OR REPLACE INTO approved_users
-               (telegram_id, phone, first_name, username, joined_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (telegram_id, n, first_name, username, now, expires_at),
-        )
-        c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
-        c.execute("DELETE FROM expiry_warned WHERE telegram_id = ?", (telegram_id,))
-
-
-def free_phone(phone: str) -> List[int]:
-    """Shu raqam bilan ro'yxatdan o'tgan akkount(lar)ni approved_users'dan o'chiradi.
-    Raqam ruxsat ro'yxatida (allowed_phones) qoladi — boshqa akkount qayta ro'yxatdan o'ta oladi.
-    O'chirilgan telegram_id'lar ro'yxatini qaytaradi."""
-    n = normalize_phone(phone)
-    if not n:
-        return []
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        rows = c.execute(
-            "SELECT telegram_id FROM approved_users WHERE phone = ?", (n,)
-        ).fetchall()
-        ids = [r[0] for r in rows]
-        if ids:
-            c.execute("DELETE FROM approved_users WHERE phone = ?", (n,))
-        return ids
+        if active and (exp == 0 or now < exp):
+            return True
+    return False
 
 
 def get_phone_owner(phone: str) -> Optional[int]:
-    """Shu raqam bilan ro'yxatdan o'tgan telegram_id ni qaytaradi (bo'lmasa None)."""
+    """Shu raqam bilan ro'yxatdan o'tgan telegram_id (bo'lmasa None)."""
     n = normalize_phone(phone)
     if not n:
         return None
+    rows = sb.select(
+        "users",
+        f"phone=eq.{sb.quote(n)}&telegram_id=not.is.null&select=telegram_id&limit=1",
+    )
+    if rows and rows[0].get("telegram_id") is not None:
+        return int(rows[0]["telegram_id"])
+    return None
+
+
+def _allowed_contact(n: str) -> Optional[dict]:
+    rows = sb.select(
+        "allowed_contacts",
+        f"phone=eq.{sb.quote(n)}&select=cohort_id,role&limit=1",
+    )
+    return rows[0] if rows else None
+
+
+def approve_user(telegram_id: int, phone: str, first_name: str = "", username: str = "") -> bool:
+    """O'quvchini Supabase users'ga bog'laydi (phone + patok). Yangi/yangilangan → True."""
+    n = normalize_phone(phone)
+    if not n:
+        return False
+    contact = _allowed_contact(n)
+    cohort_id = contact.get("cohort_id") if contact else None
+    role = (contact.get("role") if contact else None) or "student"
+
+    existing = sb.select(
+        "users", f"telegram_id=eq.{telegram_id}&select=id,role&limit=1"
+    )
+    patch = {
+        "phone": n,
+        "cohort_id": cohort_id,
+        "first_name": first_name or None,
+        "username": username or None,
+        "last_seen_at": _iso_now(),
+    }
+    try:
+        if existing:
+            sb.update("users", f"telegram_id=eq.{telegram_id}", patch)
+        else:
+            row = dict(patch)
+            row["telegram_id"] = telegram_id
+            row["role"] = role
+            sb.insert("users", row)
+    except sb.SupabaseError as e:
+        logger.error("approve_user Supabase xato: %s", e)
+        return False
+
+    # allowed_contacts.used_at ni belgilaymiz (statistika uchun)
+    try:
+        sb.update(
+            "allowed_contacts",
+            f"phone=eq.{sb.quote(n)}&used_at=is.null",
+            {"used_at": _iso_now()},
+            prefer="return=minimal",
+        )
+    except sb.SupabaseError:
+        pass
+
+    # Lokal ban/ogohlantirishni tozalaymiz
     with _lock, sqlite3.connect(DB_PATH) as c:
-        row = c.execute(
-            "SELECT telegram_id FROM approved_users WHERE phone = ?",
-            (n,),
-        ).fetchone()
-        return row[0] if row else None
+        c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
+        c.execute("DELETE FROM expiry_warned WHERE telegram_id = ?", (telegram_id,))
+    return True
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ============================================================
+# Tasdiqlangan foydalanuvchilar (users) — Supabase
+# ============================================================
+
+def _is_banned(telegram_id: int) -> bool:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        return c.execute(
+            "SELECT 1 FROM banned_users WHERE telegram_id = ?", (telegram_id,)
+        ).fetchone() is not None
+
+
+def _user_row(telegram_id: int) -> Optional[dict]:
+    rows = sb.select(
+        "users",
+        f"telegram_id=eq.{telegram_id}"
+        "&select=telegram_id,phone,first_name,username,role,created_at,cohort_id,"
+        "cohort:cohorts!users_cohort_id_fkey(ends_at,is_active)&limit=1",
+    )
+    return rows[0] if rows else None
 
 
 def is_user_approved(telegram_id: int) -> bool:
-    """Foydalanuvchi tasdiqlangan VA muddati o'tmagan."""
-    now = int(time.time())
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        if c.execute("SELECT 1 FROM banned_users WHERE telegram_id = ?", (telegram_id,)).fetchone():
-            return False
-        row = c.execute(
-            "SELECT expires_at FROM approved_users WHERE telegram_id = ?",
-            (telegram_id,),
-        ).fetchone()
-        if not row:
-            return False
-        expires_at = row[0]
-        if expires_at == 0:
-            return True
-        return now < expires_at
+    """Ro'yxatdan o'tgan (phone bor), banlanmagan, patok faol va muddati o'tmagan."""
+    if _is_banned(telegram_id):
+        return False
+    row = _user_row(telegram_id)
+    if not row or not row.get("phone"):
+        return False
+    role = (row.get("role") or "").lower()
+    if role in ADMIN_ROLES:
+        return True
+    exp, active = _cohort_expiry(row.get("cohort"))
+    if row.get("cohort_id") is None:
+        return True
+    if not active:
+        return False
+    return exp == 0 or _now() < exp
 
 
 def get_user_info(telegram_id: int) -> Optional[Dict]:
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        row = c.execute(
-            "SELECT telegram_id, phone, first_name, username, joined_at, expires_at "
-            "FROM approved_users WHERE telegram_id = ?",
-            (telegram_id,),
-        ).fetchone()
-        if not row:
-            return None
-        return {
-            "telegram_id": row[0],
-            "phone": row[1],
-            "first_name": row[2],
-            "username": row[3],
-            "joined_at": row[4],
-            "expires_at": row[5],
-        }
+    row = _user_row(telegram_id)
+    if not row:
+        return None
+    exp, _ = _cohort_expiry(row.get("cohort"))
+    return {
+        "telegram_id": int(row["telegram_id"]),
+        "phone": _strip_plus(row.get("phone")),
+        "first_name": row.get("first_name"),
+        "username": row.get("username"),
+        "joined_at": _date_to_ts(row.get("created_at")),
+        "expires_at": exp,
+    }
+
+
+def free_phone(phone: str) -> List[int]:
+    """Shu raqam bilan bog'langan akkount(lar)dan phone'ni uzadi (users.phone=null) —
+    raqam allowed_contacts'da qoladi, boshqa akkount qayta ro'yxatdan o'ta oladi.
+    Uzilgan telegram_id'lar ro'yxatini qaytaradi."""
+    n = normalize_phone(phone)
+    if not n:
+        return []
+    rows = sb.select(
+        "users", f"phone=eq.{sb.quote(n)}&select=telegram_id"
+    )
+    ids = [int(r["telegram_id"]) for r in rows if r.get("telegram_id") is not None]
+    if ids:
+        try:
+            sb.update(
+                "users", f"phone=eq.{sb.quote(n)}",
+                {"phone": None}, prefer="return=minimal",
+            )
+        except sb.SupabaseError as e:
+            logger.error("free_phone xato: %s", e)
+            return []
+    # raqamni qayta ishlatish mumkin bo'lishi uchun used_at ni qaytaramiz
+    try:
+        sb.update(
+            "allowed_contacts", f"phone=eq.{sb.quote(n)}",
+            {"used_at": None}, prefer="return=minimal",
+        )
+    except sb.SupabaseError:
+        pass
+    return ids
+
+
+def _registered_users() -> List[dict]:
+    """phone va telegram_id biriktirilgan userlar (botga kirganlar, patok bilan)."""
+    return sb.select(
+        "users",
+        "phone=not.is.null&telegram_id=not.is.null"
+        "&select=telegram_id,phone,first_name,username,role,created_at,cohort_id,"
+        "cohort:cohorts!users_cohort_id_fkey(ends_at,is_active)&order=created_at.desc",
+    )
 
 
 def list_approved_users(limit: int = 200) -> List[Tuple]:
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        return c.execute(
-            "SELECT telegram_id, phone, first_name, username, joined_at, expires_at "
-            "FROM approved_users ORDER BY joined_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    out: List[Tuple] = []
+    for r in _registered_users()[:limit]:
+        exp, _ = _cohort_expiry(r.get("cohort"))
+        out.append((
+            int(r["telegram_id"]),
+            _strip_plus(r.get("phone")),
+            r.get("first_name"),
+            r.get("username"),
+            _date_to_ts(r.get("created_at")),
+            exp,
+        ))
+    return out
 
 
 def list_allowed_phones(limit: int = 500) -> List[Tuple]:
-    """Ruxsat ro'yxatidagi raqamlar va ular ro'yxatdan o'tganmi.
-    Qaytaradi: (phone, expires_at, is_registered) — is_registered=1 agar o'sha raqam approved_users'da bo'lsa."""
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        return c.execute(
-            "SELECT a.phone, a.expires_at, "
-            "       EXISTS(SELECT 1 FROM approved_users u WHERE u.phone = a.phone) "
-            "FROM allowed_phones a ORDER BY a.added_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    """(phone, expires_at, is_registered). is_registered=1 agar used_at to'ldirilgan bo'lsa."""
+    rows = sb.select(
+        "allowed_contacts",
+        "select=phone,used_at,cohort:cohorts(ends_at)&order=invited_at.desc"
+        f"&limit={int(limit)}",
+    )
+    out: List[Tuple] = []
+    for r in rows:
+        exp = _date_to_ts((r.get("cohort") or {}).get("ends_at"))
+        out.append((_strip_plus(r.get("phone")), exp, 1 if r.get("used_at") else 0))
+    return out
 
 
 def list_all_user_ids() -> List[int]:
-    """Barcha tasdiqlangan o'quvchilarning telegram_id'lari (e'lon yuborish uchun)."""
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        return [r[0] for r in c.execute("SELECT telegram_id FROM approved_users").fetchall()]
+    """Ro'yxatdan o'tgan (phone bor) o'quvchilarning telegram_id'lari (e'lon uchun)."""
+    rows = sb.select("users", "phone=not.is.null&telegram_id=not.is.null&select=telegram_id")
+    return [int(r["telegram_id"]) for r in rows if r.get("telegram_id") is not None]
 
 
-def disable_reminders(telegram_id: int) -> None:
-    """O'quvchi kunlik eslatmalarni o'chiradi."""
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        c.execute(
-            "INSERT OR IGNORE INTO reminder_optout (telegram_id, disabled_at) VALUES (?, ?)",
-            (telegram_id, int(time.time())),
-        )
+# ============================================================
+# Muddat / kick — Supabase o'qish + lokal log
+# ============================================================
+
+def get_expired_users() -> List[Tuple]:
+    """Patok muddati o'tgan ro'yxatdan o'tgan foydalanuvchilar."""
+    now = _now()
+    out: List[Tuple] = []
+    for r in _registered_users():
+        if (r.get("role") or "").lower() in ADMIN_ROLES or r.get("cohort_id") is None:
+            continue
+        exp, _active = _cohort_expiry(r.get("cohort"))
+        if exp > 0 and exp < now:
+            out.append((int(r["telegram_id"]), _strip_plus(r.get("phone")),
+                        r.get("first_name"), exp))
+    return out
 
 
-def enable_reminders(telegram_id: int) -> None:
-    """O'quvchi kunlik eslatmalarni qayta yoqadi."""
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        c.execute("DELETE FROM reminder_optout WHERE telegram_id = ?", (telegram_id,))
-
-
-def list_reminder_user_ids() -> List[int]:
-    """Kunlik eslatma yoqilgan o'quvchilar (o'chirmaganlar)."""
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        return [
-            r[0] for r in c.execute(
-                "SELECT telegram_id FROM approved_users "
-                "WHERE telegram_id NOT IN (SELECT telegram_id FROM reminder_optout)"
-            ).fetchall()
-        ]
-
-
-def get_setting(key: str) -> Optional[str]:
-    """Botning kichik holatini o'qiydi (masalan oxirgi kunlik eslatma sanasi)."""
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
-        return row[0] if row else None
-
-
-def set_setting(key: str, value: str) -> None:
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        c.execute(
-            "INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)", (key, value)
-        )
+def get_expiring_soon(days: int = 7) -> List[Tuple]:
+    """Yaqin N kun ichida muddati tugaydiganlar (expires_at bo'yicha o'sib)."""
+    now = _now()
+    soon = now + days * 24 * 3600
+    out: List[Tuple] = []
+    for r in _registered_users():
+        if (r.get("role") or "").lower() in ADMIN_ROLES or r.get("cohort_id") is None:
+            continue
+        exp, _active = _cohort_expiry(r.get("cohort"))
+        if now < exp < soon:
+            out.append((int(r["telegram_id"]), _strip_plus(r.get("phone")),
+                        r.get("first_name"), exp))
+    out.sort(key=lambda t: t[3])
+    return out
 
 
 def get_users_to_warn(days: int = 3) -> List[Tuple]:
     """Muddati `days` kun ichida tugaydigan, lekin hali ogohlantirilmaganlar."""
-    now = int(time.time())
+    now = _now()
     deadline = now + days * 24 * 3600
     with _lock, sqlite3.connect(DB_PATH) as c:
-        return c.execute(
-            "SELECT telegram_id, phone, first_name, expires_at FROM approved_users "
-            "WHERE expires_at > ? AND expires_at < ? "
-            "AND telegram_id NOT IN (SELECT telegram_id FROM expiry_warned)",
-            (now, deadline),
-        ).fetchall()
+        warned = {r[0] for r in c.execute("SELECT telegram_id FROM expiry_warned").fetchall()}
+    out: List[Tuple] = []
+    for r in _registered_users():
+        tid = int(r["telegram_id"])
+        if tid in warned or (r.get("role") or "").lower() in ADMIN_ROLES:
+            continue
+        if r.get("cohort_id") is None:
+            continue
+        exp, _active = _cohort_expiry(r.get("cohort"))
+        if now < exp < deadline:
+            out.append((tid, _strip_plus(r.get("phone")), r.get("first_name"), exp))
+    return out
 
 
 def mark_warned(telegram_id: int) -> None:
-    """Ogohlantirilgan deb belgilaydi — qayta ogohlantirmaslik uchun."""
     with _lock, sqlite3.connect(DB_PATH) as c:
         c.execute(
             "INSERT OR IGNORE INTO expiry_warned (telegram_id, warned_at) VALUES (?, ?)",
-            (telegram_id, int(time.time())),
+            (telegram_id, _now()),
         )
-
-
-def get_expired_users() -> List[Tuple]:
-    """Muddati o'tgan tasdiqlangan foydalanuvchilar."""
-    now = int(time.time())
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        return c.execute(
-            "SELECT telegram_id, phone, first_name, expires_at "
-            "FROM approved_users WHERE expires_at > 0 AND expires_at < ?",
-            (now,),
-        ).fetchall()
-
-
-def get_expiring_soon(days: int = 7) -> List[Tuple]:
-    """Yaqin N kun ichida muddati tugaydiganlar."""
-    now = int(time.time())
-    soon = now + days * 24 * 3600
-    with _lock, sqlite3.connect(DB_PATH) as c:
-        return c.execute(
-            "SELECT telegram_id, phone, first_name, expires_at "
-            "FROM approved_users WHERE expires_at > ? AND expires_at < ? "
-            "ORDER BY expires_at ASC",
-            (now, soon),
-        ).fetchall()
 
 
 def mark_user_kicked(telegram_id: int, reason: str = "expired") -> None:
-    """Foydalanuvchini approved_users'dan o'chiradi va kick_log'ga yozadi."""
+    """Bot ruxsatini olib tashlaydi (users.phone=null) va lokal kick_log'ga yozadi."""
     with _lock, sqlite3.connect(DB_PATH) as c:
         c.execute(
             "INSERT OR IGNORE INTO kick_log (telegram_id, kicked_at, reason) VALUES (?, ?, ?)",
-            (telegram_id, int(time.time()), reason),
+            (telegram_id, _now(), reason),
         )
-        c.execute("DELETE FROM approved_users WHERE telegram_id = ?", (telegram_id,))
         c.execute("DELETE FROM expiry_warned WHERE telegram_id = ?", (telegram_id,))
+    try:
+        sb.update(
+            "users", f"telegram_id=eq.{telegram_id}",
+            {"phone": None}, prefer="return=minimal",
+        )
+    except sb.SupabaseError as e:
+        logger.error("mark_user_kicked xato: %s", e)
 
+
+# ============================================================
+# Ban (lokal — faqat shu bot)
+# ============================================================
 
 def ban_user(telegram_id: int) -> None:
     with _lock, sqlite3.connect(DB_PATH) as c:
         c.execute("INSERT OR REPLACE INTO banned_users (telegram_id) VALUES (?)", (telegram_id,))
-        c.execute("DELETE FROM approved_users WHERE telegram_id = ?", (telegram_id,))
+    try:
+        sb.update(
+            "users", f"telegram_id=eq.{telegram_id}",
+            {"phone": None}, prefer="return=minimal",
+        )
+    except sb.SupabaseError as e:
+        logger.error("ban_user xato: %s", e)
 
 
 def unban_user(telegram_id: int) -> None:
@@ -361,15 +469,48 @@ def unban_user(telegram_id: int) -> None:
 
 
 # ============================================================
-# Yordamchi adminlar (asosiy admin DB orqali boshqaradi)
+# Eslatma sozlamalari (lokal)
+# ============================================================
+
+def disable_reminders(telegram_id: int) -> None:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute(
+            "INSERT OR IGNORE INTO reminder_optout (telegram_id, disabled_at) VALUES (?, ?)",
+            (telegram_id, _now()),
+        )
+
+
+def enable_reminders(telegram_id: int) -> None:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute("DELETE FROM reminder_optout WHERE telegram_id = ?", (telegram_id,))
+
+
+def list_reminder_user_ids() -> List[int]:
+    """Kunlik eslatma yoqilgan o'quvchilar (o'chirmaganlar)."""
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        optout = {r[0] for r in c.execute("SELECT telegram_id FROM reminder_optout").fetchall()}
+    return [tid for tid in list_all_user_ids() if tid not in optout]
+
+
+def get_setting(key: str) -> Optional[str]:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        row = c.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    with _lock, sqlite3.connect(DB_PATH) as c:
+        c.execute("INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)", (key, value))
+
+
+# ============================================================
+# Yordamchi adminlar (lokal) + asosiy admin tekshiruvi
 # ============================================================
 
 def add_assistant_admin(telegram_id: int) -> bool:
-    """Yordamchi admin qo'shadi. Yangi qo'shilsa True, allaqachon bor bo'lsa False."""
     with _lock, sqlite3.connect(DB_PATH) as c:
         cur = c.execute(
-            "INSERT OR IGNORE INTO assistant_admins (telegram_id) VALUES (?)",
-            (telegram_id,),
+            "INSERT OR IGNORE INTO assistant_admins (telegram_id) VALUES (?)", (telegram_id,)
         )
         return cur.rowcount > 0
 
@@ -398,21 +539,44 @@ def list_assistant_admins() -> List[int]:
         ]
 
 
-def is_admin(telegram_id: int) -> bool:
-    """Asosiy admin (ADMIN_USER_IDS) yoki yordamchi admin (DB)."""
-    return telegram_id in ADMIN_USER_IDS or is_assistant_admin(telegram_id)
+def _has_admin_role(telegram_id: int) -> bool:
+    rows = sb.select(
+        "users", f"telegram_id=eq.{telegram_id}&select=role&limit=1"
+    )
+    return bool(rows) and (rows[0].get("role") or "").lower() in ADMIN_ROLES
 
+
+def is_admin(telegram_id: int) -> bool:
+    """Asosiy admin (ADMIN_USER_IDS), Supabase owner/admin roli yoki lokal yordamchi admin."""
+    if telegram_id in ADMIN_USER_IDS:
+        return True
+    if is_assistant_admin(telegram_id):
+        return True
+    return _has_admin_role(telegram_id)
+
+
+# ============================================================
+# Statistika
+# ============================================================
 
 def stats() -> Dict[str, int]:
+    now = _now()
+    allowed = sb.select("allowed_contacts", "select=phone")
+    registered = _registered_users()
+    expired_pending = 0
+    for r in registered:
+        if (r.get("role") or "").lower() in ADMIN_ROLES or r.get("cohort_id") is None:
+            continue
+        exp, _active = _cohort_expiry(r.get("cohort"))
+        if exp > 0 and exp < now:
+            expired_pending += 1
     with _lock, sqlite3.connect(DB_PATH) as c:
-        now = int(time.time())
-        return {
-            "allowed_phones": c.execute("SELECT COUNT(*) FROM allowed_phones").fetchone()[0],
-            "approved_users": c.execute("SELECT COUNT(*) FROM approved_users").fetchone()[0],
-            "banned_users": c.execute("SELECT COUNT(*) FROM banned_users").fetchone()[0],
-            "expired_pending_kick": c.execute(
-                "SELECT COUNT(*) FROM approved_users "
-                "WHERE expires_at > 0 AND expires_at < ?", (now,)
-            ).fetchone()[0],
-            "kick_log": c.execute("SELECT COUNT(*) FROM kick_log").fetchone()[0],
-        }
+        banned = c.execute("SELECT COUNT(*) FROM banned_users").fetchone()[0]
+        kicks = c.execute("SELECT COUNT(*) FROM kick_log").fetchone()[0]
+    return {
+        "allowed_phones": len(allowed),
+        "approved_users": len(registered),
+        "banned_users": banned,
+        "expired_pending_kick": expired_pending,
+        "kick_log": kicks,
+    }

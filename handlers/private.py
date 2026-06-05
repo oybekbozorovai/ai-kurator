@@ -103,12 +103,19 @@ async def _request_phone(message: Message, state: FSMContext) -> None:
 
 async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) -> None:
     """Raqam ruxsat ro'yxatida topilganda — tasdiqlaydi va menyuni ochadi."""
-    approve_user(
+    ok = approve_user(
         telegram_id=message.from_user.id,
         phone=phone,
         first_name=message.from_user.first_name or "",
         username=message.from_user.username or "",
     )
+    if not ok:
+        await message.answer(
+            "⚠️ Texnik nosozlik tufayli ro'yxatdan o'tkaza olmadim. "
+            "Birozdan so'ng qayta urinib ko'ring yoki qabul bo'limiga murojaat qiling."
+        )
+        logger.error("approve_user muvaffaqiyatsiz: %s (id=%s)", phone, message.from_user.id)
+        return
     await state.clear()
     await message.answer(
         f"✅ Tasdiqlandi! Xush kelibsiz, {message.from_user.first_name or 'talaba'}.",

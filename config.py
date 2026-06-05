@@ -72,6 +72,13 @@ YOUTUBE_API_KEY = _clean(os.getenv("YOUTUBE_API_KEY", ""))
 # YouTube ishlari tarixi uchun baza
 YT_DB_PATH = BASE_DIR / "data" / "yt.db"
 
+# --- Sertifikat ---
+CERT_VERIFY_BASE_URL = _clean(os.getenv("CERT_VERIFY_BASE_URL", "https://youtubeai.uz/sert/"))
+CERT_PROMPT_DAYS = int(os.getenv("CERT_PROMPT_DAYS", "10"))
+COURSE_NAME = _clean(os.getenv("COURSE_NAME", "YouTube AI"))
+CERT_TEMPLATE = BASE_DIR / "assets" / "certificate_template.png"
+CERT_FONT = BASE_DIR / "assets" / "fonts" / "AlexBrush-Regular.ttf"
+
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 if ":" not in TELEGRAM_BOT_TOKEN or not TELEGRAM_BOT_TOKEN.split(":")[0].isdigit():

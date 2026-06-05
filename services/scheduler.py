@@ -11,7 +11,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import KICK_CHAT_IDS
+from config import CERT_PROMPT_DAYS, KICK_CHAT_IDS
 from services.auth import (
     get_expired_users,
     get_setting,
@@ -21,6 +21,7 @@ from services.auth import (
     mark_warned,
     set_setting,
 )
+from services.cert_store import get_users_for_certificate, mark_cert_prompted
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,10 @@ async def kick_expired_loop(bot: Bot) -> None:
             await kick_expired_once(bot)
         except Exception as e:
             logger.exception("Expiry tekshirish xatolik: %s", e)
+        try:
+            await prompt_certificates(bot)
+        except Exception as e:
+            logger.exception("Sertifikat taklifi xatolik: %s", e)
         await asyncio.sleep(CHECK_INTERVAL)
 
 
@@ -127,6 +132,36 @@ async def maybe_send_daily_reminder(bot: Bot) -> int:
 
     set_setting("last_daily_reminder", today)
     logger.info("Kunlik eslatma yuborildi: %d ta", sent)
+    return sent
+
+
+async def prompt_certificates(bot: Bot) -> int:
+    """Muddat tugashiga CERT_PROMPT_DAYS kun qolganlarni sertifikat olishga taklif qiladi."""
+    users = get_users_for_certificate(CERT_PROMPT_DAYS)
+    if not users:
+        return 0
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Sertifikatni olish", callback_data="cert:start")
+    ]])
+    sent = 0
+    for telegram_id, phone, first_name, exp, cohort_id in users:
+        name_str = first_name or "Talaba"
+        try:
+            await bot.send_message(
+                telegram_id,
+                f"Tabriklaymiz, {name_str}!\n\n"
+                "Siz kursni muvaffaqiyatli tamomlayapsiz. "
+                "Sertifikatingizni olishingiz mumkin.",
+                reply_markup=kb,
+            )
+            sent += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            pass
+        except Exception as e:
+            logger.warning("Sertifikat xabari yuborilmadi (user=%s): %s", telegram_id, e)
+        mark_cert_prompted(telegram_id, str(cohort_id))
+        await asyncio.sleep(0.1)
+    logger.info("Sertifikat taklifi yuborildi: %d ta", sent)
     return sent
 
 

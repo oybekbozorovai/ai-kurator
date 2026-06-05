@@ -66,6 +66,9 @@ FLUX_DEV_MODEL = "black-forest-labs/flux-dev"
 DAILY_IMAGE_LIMIT = int(os.getenv("DAILY_IMAGE_LIMIT", "5"))
 DAILY_TEXT_LIMIT = int(os.getenv("DAILY_TEXT_LIMIT", "20"))
 
+# YouTube Data API v3 — kanal analizi uchun (ixtiyoriy; o'rnatilmasa xizmat "tez orada")
+YOUTUBE_API_KEY = _clean(os.getenv("YOUTUBE_API_KEY", ""))
+
 # YouTube ishlari tarixi uchun baza
 YT_DB_PATH = BASE_DIR / "data" / "yt.db"
 

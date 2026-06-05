@@ -5,6 +5,7 @@ matn ushlovchi handlerlariga halaqit bermaydi (youtube router private'dan oldin
 ulanadi: bot.py ga qarang).
 """
 
+import asyncio
 import html
 import io
 import logging
@@ -30,10 +31,12 @@ from keyboards import (
 from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
 from services.auth import is_admin, is_user_approved
 from services.gemini import (
+    analyze_channel,
     generate_channel_seo,
     generate_image_prompt,
     generate_video_seo,
 )
+from services.youtube_api import fetch_channel_analysis, is_configured as yt_api_ready
 from services.history import count_today, get_history, get_item, log_generation
 from services.image_service import add_text_to_thumbnail, resize_image
 from services.replicate_service import generate_image, generate_img2img
@@ -45,6 +48,7 @@ router.message.filter(F.chat.type == ChatType.PRIVATE)
 
 # --- FSM holatlari ---
 class YT(StatesGroup):
+    channel_analysis = State()  # kanal analizi — kanal linki kutilmoqda
     channel = State()         # kanal SEO — mavzu kutilmoqda
     video = State()           # video SEO — mavzu kutilmoqda
     avatar = State()          # avatar — tavsif kutilmoqda
@@ -163,6 +167,92 @@ async def go_home(callback: CallbackQuery, state: FSMContext) -> None:
         # Rasm xabarini tahrirlab bo'lmaydi — yangi xabar yuboramiz
         await callback.message.answer(MENU_TEXT, reply_markup=main_menu_kb())
     await callback.answer()
+
+
+# ============================================================
+# Kanal analizi (YouTube Data API)
+# ============================================================
+
+@router.callback_query(F.data == "menu:channel_analysis")
+async def analysis_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    if not yt_api_ready():
+        await callback.answer(
+            "🔍 Kanal analizi tez orada ishga tushadi. Biroz kuting!",
+            show_alert=True,
+        )
+        return
+    ok, _ = _check_limit(callback.from_user.id, "text")
+    if not ok:
+        await _deny_limit(callback, "text")
+        return
+    await state.set_state(YT.channel_analysis)
+    await callback.message.edit_text(
+        "🔍 Kanal analizi\n\n"
+        "Tahlil qilmoqchi bo'lgan YouTube kanal havolasini yuboring.\n"
+        "Masalan:\n"
+        "• https://youtube.com/@MrBeast\n"
+        "• @MrBeast\n"
+        "• kanal ID (UC...)\n\n"
+        "Bot kanalning strategiyasini, yuklash jadvalini, sarlavhalari, "
+        "teglari va oblojkalarini tahlil qilib beradi.",
+        reply_markup=home_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(YT.channel_analysis, F.text & ~F.text.startswith("/"))
+async def analysis_process(message: Message, state: FSMContext) -> None:
+    link = message.text.strip()
+    waiting = await message.answer("🔍 Kanal tahlil qilinmoqda... (10-30 soniya)")
+    try:
+        data = await asyncio.to_thread(fetch_channel_analysis, link)
+    except Exception:
+        logger.exception("Kanal analizi — fetch xatosi")
+        data = None
+
+    if not data:
+        await waiting.edit_text(
+            "❌ Bu kanalni topa olmadim.\n\n"
+            "Havolani tekshiring (to'liq link yoki @handle bo'lsin) va qayta "
+            "urinib ko'ring.",
+            reply_markup=home_kb(),
+        )
+        return
+
+    if not data.get("videos"):
+        await waiting.edit_text(
+            "⚠️ Kanal topildi, lekin tahlil uchun ochiq videolar topilmadi.\n"
+            "Boshqa kanal bilan urinib ko'ring.",
+            reply_markup=home_kb(),
+        )
+        return
+
+    try:
+        await waiting.edit_text("🧠 Strategiya tayyorlanmoqda...")
+        analysis = await analyze_channel(data)
+    except Exception:
+        logger.exception("Kanal analizi — Gemini xatosi")
+        await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
+        return
+
+    header = (
+        f"🔍 {data.get('title', 'Kanal')} — tahlil\n"
+        f"👥 Obunachilar: {data.get('subscribers', 0):,}\n"
+        f"🎬 Videolar: {data.get('video_count', 0):,}\n"
+        f"👁 Umumiy ko'rishlar: {data.get('views', 0):,}\n"
+        f"{'─' * 20}\n\n"
+    )
+    result = header + analysis
+
+    log_generation(message.from_user.id, "channel_analysis", "text",
+                   label=data.get("title", link)[:40],
+                   result_type="text", result_text=result)
+    await state.clear()
+    await waiting.delete()
+    await _send_text_result(message, result)
 
 
 # ============================================================

@@ -148,6 +148,116 @@ _IMAGE_RULES = {
 }
 
 
+def _digest_channel(data: dict) -> dict:
+    """Kanal ma'lumotidan aniq raqamlarni (Python'da) hisoblaydi —
+    LLM'ga sanashni ishonib qo'ymaymiz."""
+    from collections import Counter
+    from datetime import datetime, timezone
+
+    videos = data.get("videos", []) or []
+    dates = []
+    for v in videos:
+        ts = v.get("published_at", "")
+        if not ts:
+            continue
+        try:
+            dates.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
+        except ValueError:
+            pass
+    dates.sort(reverse=True)  # eng yangisi birinchi
+
+    # O'rtacha yuklash oralig'i (kun)
+    avg_gap = None
+    if len(dates) >= 2:
+        gaps = [(dates[i] - dates[i + 1]).total_seconds() / 86400.0
+                for i in range(len(dates) - 1)]
+        if gaps:
+            avg_gap = round(sum(gaps) / len(gaps), 1)
+
+    # Hafta kunlari va soatlar (UTC)
+    weekdays = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"]
+    day_counts = Counter(weekdays[d.weekday()] for d in dates)
+    hour_counts = Counter(d.astimezone(timezone.utc).hour for d in dates)
+
+    titles = [v.get("title", "") for v in videos if v.get("title")]
+    title_lengths = [len(t) for t in titles]
+    avg_title_len = round(sum(title_lengths) / len(title_lengths)) if title_lengths else 0
+
+    all_tags = []
+    for v in videos:
+        all_tags.extend(t.lower() for t in (v.get("tags") or []))
+    top_tags = [t for t, _ in Counter(all_tags).most_common(15)]
+
+    views = [v.get("views", 0) for v in videos]
+    avg_views = round(sum(views) / len(views)) if views else 0
+    top_videos = sorted(videos, key=lambda v: v.get("views", 0), reverse=True)[:5]
+
+    return {
+        "avg_gap_days": avg_gap,
+        "uploads_per_week": round(7 / avg_gap, 1) if avg_gap else None,
+        "top_days": [d for d, _ in day_counts.most_common(3)],
+        "top_hours_utc": [h for h, _ in hour_counts.most_common(3)],
+        "avg_title_len": avg_title_len,
+        "sample_titles": titles[:10],
+        "top_tags": top_tags,
+        "uses_tags": bool(top_tags),
+        "avg_views": avg_views,
+        "top_videos": [
+            {"title": v.get("title", ""), "views": v.get("views", 0)}
+            for v in top_videos
+        ],
+        "sample_description": (videos[0].get("description", "")[:600] if videos else ""),
+    }
+
+
+async def analyze_channel(data: dict) -> str:
+    """YouTube kanal tahlili — o'zbek tilida amaliy strategiya matni.
+    data: services.youtube_api.fetch_channel_analysis() natijasi.
+    """
+    d = _digest_channel(data)
+    facts = {
+        "kanal_nomi": data.get("title", ""),
+        "obunachilar": data.get("subscribers", 0),
+        "umumiy_korishlar": data.get("views", 0),
+        "videolar_soni": data.get("video_count", 0),
+        "tahlildagi_oxirgi_videolar": len(data.get("videos", []) or []),
+        "ortacha_yuklash_oraligi_kun": d["avg_gap_days"],
+        "haftasiga_video": d["uploads_per_week"],
+        "kop_yuklaydigan_kunlar": d["top_days"],
+        "kop_yuklaydigan_soatlar_utc": d["top_hours_utc"],
+        "ortacha_sarlavha_uzunligi": d["avg_title_len"],
+        "ortacha_korishlar": d["avg_views"],
+        "teglardan_foydalanadimi": d["uses_tags"],
+        "kop_ishlatilgan_teglar": d["top_tags"],
+        "sarlavha_namunalari": d["sample_titles"],
+        "eng_kop_korilgan_videolar": d["top_videos"],
+        "opisaniye_namunasi": d["sample_description"],
+    }
+    prompt = (
+        "Sen tajribali YouTube strateg va SEO mutaxassisisan. Quyida bitta "
+        "YouTube kanalning ochiq ma'lumotlari (raqamlar allaqachon hisoblangan) "
+        "JSON ko'rinishida berilgan. Shu ma'lumot asosida O'ZBEK TILIDA, aniq va "
+        "amaliy tahlil yoz. Raqamlarni o'zing qayta sanama — berilganini ishlat.\n\n"
+        f"MA'LUMOT:\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n\n"
+        "Quyidagi bo'limlar bilan, qisqa va tushunarli yoz (emoji ishlatma, "
+        "Markdown sarlavha # ishlatma, oddiy matn + bo'lim nomlari):\n"
+        "1) Umumiy xulosa — kanal qanaqa, qanday holatda.\n"
+        "2) Yuklash strategiyasi — qachon va qanchadan video chiqaryapti, "
+        "bu yaxshimi, qanday yaxshilash mumkin.\n"
+        "3) Sarlavhalar — qanday uslubda yozyapti (uzunlik, hook, clickbait), "
+        "namuna asosida 3 ta yaxshilangan sarlavha varianti taklif qil.\n"
+        "4) Teglar va opisaniye — to'g'ri ishlatyaptimi, nima yetishmayapti.\n"
+        "5) Oblojka (thumbnail) — sarlavhalardan kelib chiqib qanday oblojka "
+        "uslubi mos kelishi haqida tavsiya.\n"
+        "6) 3 ta aniq keyingi qadam — o'quvchi bugun qila oladigan ish.\n\n"
+        "Do'stona, ustozona ohangda yoz. Javob 350 so'zdan oshmasin."
+    )
+    text = await _generate(prompt)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return text.strip()
+
+
 async def generate_image_prompt(user_input: str, kind: str) -> str:
     """Foydalanuvchi tavsifidan Flux AI uchun ingliz tilidagi rasm prompti yaratadi.
     kind: 'avatar' | 'banner' | 'thumbnail'

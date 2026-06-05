@@ -9,6 +9,7 @@ MENU_TEXT = "🤖 Bosh menyu\n\nKerakli xizmatni tanlang 👇"
 
 # Xizmat nomi -> emoji (tarix ro'yxati uchun)
 SERVICE_EMOJI = {
+    "channel_analysis": "🔍",
     "channel_seo": "📺",
     "video_seo": "🎬",
     "avatar": "🖼",
@@ -22,6 +23,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     """Asosiy menyu — barcha xizmatlar alohida tugma."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎓 Kurs bo'yicha savol", callback_data="menu:qa")],
+        [InlineKeyboardButton(text="🔍 Kanal analizi", callback_data="menu:channel_analysis")],
         [InlineKeyboardButton(text="📺 Kanal SEO", callback_data="menu:channel_seo")],
         [InlineKeyboardButton(text="🎬 Video SEO", callback_data="menu:video_seo")],
         [InlineKeyboardButton(text="🖼 Avatar yaratish", callback_data="menu:avatar")],

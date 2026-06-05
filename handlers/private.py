@@ -263,7 +263,7 @@ async def qa_answer(message: Message) -> None:
     await message.bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
     hits = await retrieve(message.text)
     context = format_context(hits)
-    answer = await ask_tutor(message.text, context)
+    answer = await ask_tutor(message.text, context, telegram_id=user_id)
 
     if not answer.startswith("⚠️"):
         cache_answer(message.text, answer)

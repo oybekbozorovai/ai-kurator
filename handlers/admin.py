@@ -35,6 +35,7 @@ from services.auth import (
     unban_user,
 )
 from services.scheduler import kick_expired_once
+from services import usage
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -64,7 +65,9 @@ HELP_TEXT = (
     "/admin_stats — umumiy statistika\n"
     "/list_users — ro'yxatdan o'tgan (kontakt ulashgan) talabalar\n"
     "/list_phones — patokka biriktirilgan ruxsat raqamlari\n"
-    "/list_expiring — yaqin 7 kun ichida muddati tugaydiganlar\n\n"
+    "/list_expiring — yaqin 7 kun ichida muddati tugaydiganlar\n"
+    "/usage [kun] — AI iste'mol/xarajat hisoboti (default 30 kun)\n"
+    "/usage_user 123456789 [kun] — bitta o'quvchi iste'moli (default 90 kun)\n\n"
     "ℹ️ Raqamlar A.Y.P.I dashboard orqali patokka qo'shiladi.\n\n"
     "Boshqaruv:\n"
     "/broadcast — barcha o'quvchilarga e'lon yuborish\n"
@@ -129,6 +132,116 @@ async def cmd_admin_stats(message: Message) -> None:
         f"• Tarixiy chiqarilganlar: {s['kick_log']}\n\n"
         f"🚪 Kick chatlar: {kick_chats}"
     )
+
+
+_SERVICE_LABEL = {
+    "qa": "Kurs savol-javob",
+    "channel_analysis": "Kanal analizi",
+    "channel_seo": "Kanal SEO",
+    "video_seo": "Video SEO",
+    "avatar": "Avatar",
+    "banner": "Banner",
+    "thumbnail": "Thumbnail",
+    "grader": "Uy vazifa baholash",
+}
+
+
+def _fmt_usd(v) -> str:
+    v = float(v or 0)
+    return f"${v:,.2f}" if v >= 0.01 or v == 0 else f"${v:.4f}"
+
+
+@router.message(Command("usage"))
+async def cmd_usage(message: Message) -> None:
+    """AI iste'mol/xarajat hisoboti — umumiy + xizmatlar + faol o'quvchilar."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    days = 30
+    if len(parts) > 1 and parts[1].isdigit():
+        days = max(1, min(int(parts[1]), 365))
+
+    s = await asyncio.to_thread(usage.summary, days)
+    services = await asyncio.to_thread(usage.by_service, days)
+    top = await asyncio.to_thread(usage.top_users, days, 10)
+
+    if not s.get("total_events"):
+        await message.answer(
+            f"📊 AI iste'mol — oxirgi {days} kun\n\n"
+            "Hali ma'lumot yo'q.\n\n"
+            "Agar yangi qo'shilgan bo'lsa: Supabase'da `usage_events` jadvali "
+            "yaratilganini tekshiring (migrations/usage_events.sql)."
+        )
+        return
+
+    lines = [
+        f"📊 AI iste'mol — oxirgi {days} kun\n",
+        f"• Jami so'rovlar: {int(s['total_events']):,}",
+        f"• Faol o'quvchilar: {int(s['active_users']):,}",
+        f"• Jami tokenlar: {int(s['total_tokens']):,}",
+        f"• Taxminiy xarajat: {_fmt_usd(s['total_cost'])}",
+    ]
+
+    if services:
+        lines.append("\n🧩 Xizmatlar bo'yicha:")
+        for r in services:
+            name = _SERVICE_LABEL.get(r["service"], r["service"])
+            lines.append(
+                f"• {name}: {int(r['events']):,} so'rov · "
+                f"{int(r['tokens']):,} token · {_fmt_usd(r['cost'])}"
+            )
+
+    if top:
+        lines.append("\n👤 Eng faol o'quvchilar (xarajat bo'yicha):")
+        for r in top:
+            lines.append(
+                f"• id={r['telegram_id']}: {int(r['events']):,} so'rov · "
+                f"{int(r['tokens']):,} token · {_fmt_usd(r['cost'])}"
+            )
+
+    lines.append(
+        f"\nℹ️ Xarajat taxminiy (model narxiga asoslangan). "
+        f"Bitta o'quvchi tafsiloti: /usage_user <id>"
+    )
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("usage_user"))
+async def cmd_usage_user(message: Message) -> None:
+    """Bitta o'quvchining xizmatlar bo'yicha iste'moli."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer("Ishlatish: /usage_user 123456789 [kun]")
+        return
+    tid = int(parts[1])
+    days = 90
+    if len(parts) > 2 and parts[2].isdigit():
+        days = max(1, min(int(parts[2]), 365))
+
+    rows = await asyncio.to_thread(usage.user_detail, tid, days)
+    if not rows:
+        await message.answer(
+            f"id={tid} uchun oxirgi {days} kunda iste'mol topilmadi."
+        )
+        return
+
+    total_tokens = sum(int(r["tokens"]) for r in rows)
+    total_cost = sum(float(r["cost"]) for r in rows)
+    total_events = sum(int(r["events"]) for r in rows)
+    lines = [
+        f"👤 Iste'mol — id={tid} (oxirgi {days} kun)\n",
+        f"• Jami: {total_events:,} so'rov · {total_tokens:,} token · {_fmt_usd(total_cost)}\n",
+        "Xizmatlar bo'yicha:",
+    ]
+    for r in rows:
+        name = _SERVICE_LABEL.get(r["service"], r["service"])
+        lines.append(
+            f"• {name}: {int(r['events']):,} so'rov · "
+            f"{int(r['tokens']):,} token · {_fmt_usd(r['cost'])}"
+        )
+    await message.answer("\n".join(lines))
 
 
 @router.message(Command("free_phone"))

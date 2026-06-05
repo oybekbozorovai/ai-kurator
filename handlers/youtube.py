@@ -16,7 +16,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from config import DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT
+from config import DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT, FLUX_MODEL, FLUX_REDUX_MODEL
 from handlers.utils import split_for_telegram
 from keyboards import (
     MENU_TEXT,
@@ -38,6 +38,7 @@ from services.gemini import (
 )
 from services.youtube_api import fetch_channel_analysis, is_configured as yt_api_ready
 from services.history import count_today, get_history, get_item, log_generation
+from services import usage
 from services.image_service import add_text_to_thumbnail, resize_image
 from services.replicate_service import generate_image, generate_img2img
 
@@ -232,7 +233,7 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
 
     try:
         await waiting.edit_text("🧠 Strategiya tayyorlanmoqda...")
-        analysis = await analyze_channel(data)
+        analysis = await analyze_channel(data, telegram_id=message.from_user.id)
     except Exception:
         logger.exception("Kanal analizi — Gemini xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -283,7 +284,7 @@ async def channel_process(message: Message, state: FSMContext) -> None:
     niche = message.text.strip()
     waiting = await message.answer("⏳ Kanal SEO tayyorlanmoqda...")
     try:
-        data = await generate_channel_seo(niche)
+        data = await generate_channel_seo(niche, telegram_id=message.from_user.id)
     except Exception:
         logger.exception("Kanal SEO xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -381,7 +382,7 @@ async def video_process(message: Message, state: FSMContext) -> None:
     topic = message.text.strip()
     waiting = await message.answer("⏳ Video SEO tayyorlanmoqda...")
     try:
-        data = await generate_video_seo(topic)
+        data = await generate_video_seo(topic, telegram_id=message.from_user.id)
     except Exception:
         logger.exception("Video SEO xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -437,10 +438,12 @@ async def avatar_process(message: Message, state: FSMContext) -> None:
     description = message.text.strip()
     waiting = await message.answer("⏳ Rasm uchun prompt tayyorlanmoqda...")
     try:
-        prompt = await generate_image_prompt(description, kind="avatar")
+        prompt = await generate_image_prompt(
+            description, kind="avatar", telegram_id=message.from_user.id)
         await waiting.edit_text("🎨 Avatar chizilmoqda... (30-60 soniya)")
         image = await generate_image(prompt, aspect_ratio="1:1")
         image = resize_image(image, 1024, 1024)
+        usage.record(message.from_user.id, "avatar", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Avatar yaratish xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -488,10 +491,12 @@ async def banner_process(message: Message, state: FSMContext) -> None:
     info = message.text.strip()
     waiting = await message.answer("⏳ Rasm uchun prompt tayyorlanmoqda...")
     try:
-        prompt = await generate_image_prompt(info, kind="banner")
+        prompt = await generate_image_prompt(
+            info, kind="banner", telegram_id=message.from_user.id)
         await waiting.edit_text("🎨 Banner chizilmoqda... (30-60 soniya)")
         image = await generate_image(prompt, aspect_ratio="16:9")
         image = resize_image(image, 2560, 1440)
+        usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Banner yaratish xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -614,10 +619,15 @@ async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
             buf = io.BytesIO()
             await callback.bot.download(photo_file_id, destination=buf)
             image = await generate_img2img(buf.getvalue())
+            usage.record(callback.from_user.id, "thumbnail", kind="image",
+                         model=FLUX_REDUX_MODEL)
         else:
             # AI rasm chizadi
-            prompt = await generate_image_prompt(topic, kind="thumbnail")
+            prompt = await generate_image_prompt(
+                topic, kind="thumbnail", telegram_id=callback.from_user.id)
             image = await generate_image(prompt, aspect_ratio="16:9")
+            usage.record(callback.from_user.id, "thumbnail", kind="image",
+                         model=FLUX_MODEL)
         image = resize_image(image, 1280, 720)
         if overlay:  # matn faqat kerak bo'lsa qo'shiladi
             image = add_text_to_thumbnail(image, overlay, position, color)

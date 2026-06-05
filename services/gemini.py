@@ -8,6 +8,7 @@ from typing import Optional
 import google.generativeai as genai
 
 from config import GEMINI_API_KEY, GEMINI_MODEL, PROMPTS_DIR
+from services import usage
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,11 @@ def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
-async def ask_tutor(question: str, context: str) -> str:
+async def ask_tutor(question: str, context: str, telegram_id=None) -> str:
     """Talabaning savoliga, RAG'dan topilgan kontekst asosida javob beradi."""
     prompt = _load_prompt("tutor").replace("{context}", context)
     full_prompt = f"{prompt}\n\nTalaba savoli: {question}"
-    return await _generate(full_prompt)
+    return await _generate(full_prompt, telegram_id=telegram_id, service="qa")
 
 
 async def grade_homework(
@@ -38,6 +39,7 @@ async def grade_homework(
     submission: str,
     context: str,
     image_path: Optional[Path] = None,
+    telegram_id=None,
 ) -> str:
     """Uy vazifasini tekshirib, baho beradi."""
     prompt = (
@@ -49,15 +51,18 @@ async def grade_homework(
 
     if image_path and image_path.exists():
         image_part = genai.upload_file(str(image_path))
-        return await _generate([prompt, image_part])
+        return await _generate([prompt, image_part], telegram_id=telegram_id, service="grader")
 
-    return await _generate(prompt)
+    return await _generate(prompt, telegram_id=telegram_id, service="grader")
 
 
-async def _generate(content) -> str:
+async def _generate(content, telegram_id=None, service=None) -> str:
     def _call():
         response = _model.generate_content(content)
         text = response.text or ""
+        # Iste'mol (token/xarajat) hisobi — best-effort, oqimni buzmaydi
+        if service:
+            usage.record_from_gemini(response, telegram_id, service, GEMINI_MODEL)
         # Tugallanish sababini log qilamiz — debug uchun
         try:
             fr = response.candidates[0].finish_reason.name
@@ -86,7 +91,7 @@ def _extract_json(text: str) -> dict:
     return json.loads(match.group(0))
 
 
-async def generate_channel_seo(niche: str) -> dict:
+async def generate_channel_seo(niche: str, telegram_id=None) -> dict:
     """Kanal SEO: 5 ta nom, tavsif, 15 ta kalit so'z.
     Qaytaradi: {"names": [...], "description": "...", "keywords": [...]}
     """
@@ -100,13 +105,13 @@ async def generate_channel_seo(niche: str) -> dict:
         "Return only JSON, nothing else.\n"
         'Format: {"names": [...], "description": "...", "keywords": [...]}'
     )
-    text = await _generate(prompt)
+    text = await _generate(prompt, telegram_id=telegram_id, service="channel_seo")
     if text.startswith("⚠️"):
         raise RuntimeError(text)
     return _extract_json(text)
 
 
-async def generate_video_seo(topic: str) -> dict:
+async def generate_video_seo(topic: str, telegram_id=None) -> dict:
     """Video SEO: 5 ta nom, opisaniye, 30 ta teg.
     Qaytaradi: {"titles": [...], "description": "...", "tags": [...]}
     """
@@ -124,7 +129,7 @@ async def generate_video_seo(topic: str) -> dict:
         "Return only JSON, nothing else.\n"
         'Format: {"titles": [...], "description": "...", "tags": [...]}'
     )
-    text = await _generate(prompt)
+    text = await _generate(prompt, telegram_id=telegram_id, service="video_seo")
     if text.startswith("⚠️"):
         raise RuntimeError(text)
     return _extract_json(text)
@@ -210,7 +215,7 @@ def _digest_channel(data: dict) -> dict:
     }
 
 
-async def analyze_channel(data: dict) -> str:
+async def analyze_channel(data: dict, telegram_id=None) -> str:
     """YouTube kanal tahlili — o'zbek tilida amaliy strategiya matni.
     data: services.youtube_api.fetch_channel_analysis() natijasi.
     """
@@ -252,13 +257,13 @@ async def analyze_channel(data: dict) -> str:
         "6) 3 ta aniq keyingi qadam — o'quvchi bugun qila oladigan ish.\n\n"
         "Do'stona, ustozona ohangda yoz. Javob 350 so'zdan oshmasin."
     )
-    text = await _generate(prompt)
+    text = await _generate(prompt, telegram_id=telegram_id, service="channel_analysis")
     if text.startswith("⚠️"):
         raise RuntimeError(text)
     return text.strip()
 
 
-async def generate_image_prompt(user_input: str, kind: str) -> str:
+async def generate_image_prompt(user_input: str, kind: str, telegram_id=None) -> str:
     """Foydalanuvchi tavsifidan Flux AI uchun ingliz tilidagi rasm prompti yaratadi.
     kind: 'avatar' | 'banner' | 'thumbnail'
     """
@@ -269,7 +274,7 @@ async def generate_image_prompt(user_input: str, kind: str) -> str:
         f"rasm prompti yoz.\nTalab: {rules}.\n\n"
         "Faqat ingliz tilidagi promptni yoz, boshqa hech narsa yozma."
     )
-    text = await _generate(prompt)
+    text = await _generate(prompt, telegram_id=telegram_id, service=kind)
     if text.startswith("⚠️"):
         raise RuntimeError(text)
     return text.strip().strip('"')

@@ -30,6 +30,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🎨 Banner yaratish", callback_data="menu:banner")],
         [InlineKeyboardButton(text="🌅 Thumbnail yaratish", callback_data="menu:thumbnail")],
         [InlineKeyboardButton(text="📂 Mening ishlarim", callback_data="menu:history")],
+        [InlineKeyboardButton(text="ℹ️ Botdan foydalanish", callback_data="menu:guide")],
         [InlineKeyboardButton(text="🛠 Texnik yordam", callback_data="menu:support")],
     ])
 

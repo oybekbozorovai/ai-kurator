@@ -170,6 +170,39 @@ async def go_home(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+GUIDE_TEXT = (
+    "ℹ️ Botdan foydalanish qo'llanmasi\n\n"
+    "Har bir tugma nima uchun:\n\n"
+    "🎓 Kurs bo'yicha savol — dars, vazifa yoki kurs mavzusi bo'yicha savolingizga "
+    "AI darrov javob beradi.\n\n"
+    "🔍 Kanal analizi — YouTube kanal havolasini yuborsangiz, uning strategiyasi va "
+    "kuchli/zaif tomonlarini tahlil qiladi.\n\n"
+    "📺 Kanal SEO — kanalingiz mavzusini yozsangiz, kanal nomi, tavsif va kalit so'zlar "
+    "bo'yicha tavsiya beradi.\n\n"
+    "🎬 Video SEO — video uchun sarlavha, tavsif va teglar yozib beradi "
+    "(tayyor yo'nalishlar yoki o'zingiznikini).\n\n"
+    "🖼 Avatar yaratish — kanal uchun profil rasm (avatar) chizadi.\n\n"
+    "🎨 Banner yaratish — kanal shapkasi (banner) chizadi.\n\n"
+    "🌅 Thumbnail yaratish — video uchun cover rasm. Mavzu yozasiz yoki namuna rasm "
+    "yuborasiz.\n\n"
+    "📂 Mening ishlarim — ilgari yaratgan ishlaringiz tarixi.\n\n"
+    "🛠 Texnik yordam — bot, mini-app yoki login ishlamasa, muammoni shu yerga yozing "
+    "(skrinshot bilan).\n\n"
+    "Qaytish uchun 🏠 Bosh menyu tugmasini bosing."
+)
+
+
+@router.callback_query(F.data == "menu:guide")
+async def show_guide(callback: CallbackQuery, state: FSMContext) -> None:
+    """Botdan foydalanish qo'llanmasi — har bir tugma vazifasi."""
+    await state.clear()
+    try:
+        await callback.message.edit_text(GUIDE_TEXT, reply_markup=home_kb())
+    except Exception:
+        await callback.message.answer(GUIDE_TEXT, reply_markup=home_kb())
+    await callback.answer()
+
+
 # ============================================================
 # Kanal analizi (YouTube Data API)
 # ============================================================

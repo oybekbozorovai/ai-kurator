@@ -22,10 +22,12 @@ from services.auth import (
     set_setting,
 )
 from services.cert_store import get_users_for_certificate, mark_cert_prompted
+from services.support_store import get_unnotified_resolved, mark_notified
 
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL = 60 * 60  # har 1 soatda
+SUPPORT_NOTIFY_INTERVAL = 60  # texnik yordam javoblarini har 1 daqiqada yetkazadi
 WARN_BEFORE_DAYS = 3  # muddat tugashidan necha kun oldin ogohlantirish
 
 # Kunlik eslatma — har kuni shu soatdan keyin (UTC). 14 UTC = 19:00 Toshkent.
@@ -162,6 +164,46 @@ async def prompt_certificates(bot: Bot) -> int:
         mark_cert_prompted(telegram_id, str(cohort_id))
         await asyncio.sleep(0.1)
     logger.info("Sertifikat taklifi yuborildi: %d ta", sent)
+    return sent
+
+
+SUPPORT_RESOLVED_MESSAGE = (
+    "🛠 Texnik yordam\n\n"
+    "Murojaatingiz ko'rib chiqildi.\n\n"
+    "{resolution}"
+)
+
+
+async def support_notifier_loop(bot: Bot) -> None:
+    """Hal qilingan texnik yordam ticketlari bo'yicha o'quvchilarga javob yuboradi."""
+    while True:
+        try:
+            await deliver_resolved_tickets(bot)
+        except Exception as e:
+            logger.exception("Texnik yordam javobi xatolik: %s", e)
+        await asyncio.sleep(SUPPORT_NOTIFY_INTERVAL)
+
+
+async def deliver_resolved_tickets(bot: Bot) -> int:
+    """Hal qilingan, lekin xabar berilmagan ticketlarni o'quvchiga yetkazadi."""
+    tickets = get_unnotified_resolved()
+    if not tickets:
+        return 0
+    sent = 0
+    for t in tickets:
+        telegram_id = t.get("telegram_id")
+        resolution = (t.get("resolution_text") or "Muammoyingiz bartaraf etildi.").strip()
+        text = SUPPORT_RESOLVED_MESSAGE.format(resolution=resolution)
+        try:
+            await bot.send_message(telegram_id, text)
+            sent += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            pass  # bloklagan/o'chgan — normal
+        except Exception as e:
+            logger.warning("Texnik yordam javobi yuborilmadi (user=%s): %s", telegram_id, e)
+        mark_notified(t.get("id"))  # qayta yubormaslik uchun
+        await asyncio.sleep(0.1)
+    logger.info("Texnik yordam javobi yuborildi: %d ta", sent)
     return sent
 
 

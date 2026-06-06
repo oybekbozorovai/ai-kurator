@@ -24,6 +24,8 @@ class SupportStates(StatesGroup):
 
 PROMPT = (
     "🛠 Texnik yordam\n\n"
+    "Bu bo'lim faqat texnik nosozliklar uchun (bot, mini-app, login, vazifa yuborish ishlamasa).\n"
+    "Kurs mavzusi bo'yicha savollaringizni 🎓 «Kurs bo'yicha savol» tugmasiga yozing — u yerda darrov javob olasiz.\n\n"
     "Qanday muammoga duch keldingiz? Iltimos, batafsil yozib bering: "
     "qachon, qayerda (bot, mini-app, vazifa yuborish) va qanday xatolik chiqyapti.\n\n"
     "Skrinshot bo'lsa — rasmni shu yerga yuboring (izoh bilan birga ham bo'ladi).\n\n"

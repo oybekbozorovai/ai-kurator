@@ -142,23 +142,23 @@ VIDEO_SEO_PRESETS = {
     "n6": {
         "name": "ASMR MMS",
         "titles": [
-            "الليلة الأولى ليالي الامتحان الأخيرة ثالثة ثانوي ٢٠٢٥ مع أ محمد صلاح",
+            "4 Minutes Satisfying with Unpacking Bright Tins with Radiant Skittles and Sweet M&M'S Candy ASMR",
+            "Satisfying ASMR Unboxing: Bright Tins, Skittles & Sweet M&M's Candy!",
+            "Unpacking Colorful Candy Tins: Skittles & M&M's ASMR 🍬"
         ],
         "description": (
-            "#ثالثة_ثانوي #مراجعة_نهائية #خلاصة_الخلاويص\n"
-            "الليلة الأولى | ليالي الامتحان الأخيرة | ثالثة ثانوي ٢٠٢٥ مع أ. محمد صلاح\n\n"
-            "مراجعة أبريل، عربي أولى ثانوي، عربي اولى ثانوي الترم الثاني، مراجعة عربي تالتة ثانوي، "
-            "مراجعه عربي تالته ثانوي 2024 محمد صلاح، ليله الامتحان، نحو، بلاغه، تعبير، أدب، قصة، قراءة، "
-            "نصوص متحررة، امتحانات شاملة، حل امتحانات شاملة، اللغة العربية، الصف الثالث الثانوي، "
-            "مراجعات لغة عربية، التعبير المقالي، النحو الصف الثالث الثانوي، البلاغة الصف الثالث الثانوي، "
-            "الممنوع من الصرف، التشبيه، الكناية، الاستعارة، الوحدة الفنية، طه حسين، محمد صلاح عربي، "
-            "المراجعة النهائية في العربي، ليلة الامتحان، محمد صلاح بسطتهالك\n\n"
-            "#ثالثة_ثانوي\n"
-            "#خلاصة_الخلاويص\n"
-            "#مراجعة_نهائية"
+            "4 Minutes Satisfying with Unpacking Bright Tins with Radiant Skittles and Sweet M&M'S Candy ASMR 🍬✨\n\n"
+            "Watch the most satisfying unboxing of bright colorful tins filled with Skittles and M&M's candy! "
+            "Perfect ASMR relaxation video with crinkling sounds, tapping, and candy sorting. Dive into a world of "
+            "sweet sounds and vibrant colors that will instantly relax you.\n\n"
+            "Thank you for watching! Please like, share, and subscribe for more sweet ASMR content ❤️\n\n"
+            "#asmr #unboxing #sweet #mms #candy #satisfying #skittles #asmrcandy #oddlysatisfying"
         ),
         "tags": [
-            "ثالثة_ثانوي", "مراجعة_نهائية", "خلاصة_الخلاويص",
+            "asmr", "unboxing", "sweet", "mms", "candy", "satisfying asmr", "skittles", 
+            "asmr candy", "oddly satisfying", "asmr unboxing", "candy unboxing", 
+            "relaxing sounds", "crunchy sounds", "m&ms candy", "colorful candy",
+            "satisfying video", "candy sorting"
         ],
     },
     "n7": {

@@ -652,18 +652,25 @@ async def niche_select(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+async def _generate_banner(prompt: str) -> bytes:
+    """Imagen 3 orqali banner yaratadi; xato bo'lsa Ideogramga fallback."""
+    try:
+        return await generate_banner_imagen(prompt)
+    except Exception as e:
+        logger.warning("Imagen 3 xatosi, Ideogramga o'tilmoqda: %s", e)
+        return await generate_banner_image(prompt)
+
+
 async def _generate_niche_image(niche_key: str, kind: str,
                                 channel_name: str) -> bytes:
-    """Niche promptiga {name} o'rniga kanal nomini qo'yib rasm yaratadi.
-    Imagen 3 matnni o'zi chizadi — PIL overlay ishlatilmaydi.
-    """
+    """Niche promptiga {name} o'rniga kanal nomini qo'yib rasm yaratadi."""
     niche = _NICHES[niche_key]
     if niche_key == "custom":
         if kind == "avatar":
             prompt = await generate_image_prompt(channel_name, kind="avatar")
             return resize_image(await generate_image(prompt, aspect_ratio="1:1"), 1024, 1024)
         else:
-            return resize_image(await generate_banner_imagen(channel_name), 2560, 1440)
+            return resize_image(await _generate_banner(channel_name), 2560, 1440)
 
     template = niche[kind]
     prompt = template.replace("{name}", channel_name)
@@ -671,7 +678,7 @@ async def _generate_niche_image(niche_key: str, kind: str,
         image = await generate_image(prompt, aspect_ratio="1:1")
         return resize_image(image, 1024, 1024)
     else:
-        image = await generate_banner_imagen(prompt)
+        image = await _generate_banner(prompt)
         return resize_image(image, 2560, 1440)
 
 

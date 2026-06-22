@@ -521,17 +521,27 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 def _extract_banner_text(user_input: str) -> str | None:
     """Foydalanuvchi so'rovidan banner uchun matn ajratadi.
-    'yozib ber', 'deb yoz', 'matn:', 'text:' kabi iboralardan keyin matnni oladi.
+    O'zbek: 'Oybek BeamNG deb yozib ber' — matn trigger OLDIN keladi.
     """
     import re
-    patterns = [
-        r"(?:deb\s+yoz(?:ib\s+ber)?|yozib\s+ber|matn[:\s]+|text[:\s]+)['\"]?([A-Za-z0-9 _\-\.ёа-яА-ЯёЎўҚқҒғҲҳ]+)['\"]?",
-        r"['\"]([A-Za-z0-9 _\-\.]{3,40})['\"]",
-    ]
-    for pat in patterns:
-        m = re.search(pat, user_input, re.IGNORECASE)
-        if m:
-            return m.group(1).strip()
+    # O'zbek: "<matn> deb yoz(ib ber)" — matn oldin
+    m = re.search(
+        r"([A-Za-z0-9][A-Za-z0-9 _\-\.]{1,38}[A-Za-z0-9])\s+deb\s+yoz",
+        user_input, re.IGNORECASE
+    )
+    if m:
+        return m.group(1).strip()
+    # "matn: <matn>" yoki "text: <matn>"
+    m = re.search(
+        r"(?:matn|text)[:\s]+['\"]?([A-Za-z0-9 _\-\.]{3,40})['\"]?",
+        user_input, re.IGNORECASE
+    )
+    if m:
+        return m.group(1).strip()
+    # Qo'shtirnoq ichidagi matn
+    m = re.search(r"['\"]([A-Za-z0-9 _\-\.]{3,40})['\"]", user_input)
+    if m:
+        return m.group(1).strip()
     return None
 
 

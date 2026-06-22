@@ -39,7 +39,7 @@ from services.gemini import (
 from services.youtube_api import fetch_channel_analysis, is_configured as yt_api_ready
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
-from services.image_service import add_text_to_thumbnail, resize_image, overlay_banner_frame
+from services.image_service import add_text_to_thumbnail, resize_image, overlay_banner_frame, add_banner_text
 from services.replicate_service import generate_image, generate_img2img
 
 logger = logging.getLogger(__name__)
@@ -519,9 +519,26 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+def _extract_banner_text(user_input: str) -> str | None:
+    """Foydalanuvchi so'rovidan banner uchun matn ajratadi.
+    'yozib ber', 'deb yoz', 'matn:', 'text:' kabi iboralardan keyin matnni oladi.
+    """
+    import re
+    patterns = [
+        r"(?:deb\s+yoz(?:ib\s+ber)?|yozib\s+ber|matn[:\s]+|text[:\s]+)['\"]?([A-Za-z0-9 _\-\.ёа-яА-ЯёЎўҚқҒғҲҳ]+)['\"]?",
+        r"['\"]([A-Za-z0-9 _\-\.]{3,40})['\"]",
+    ]
+    for pat in patterns:
+        m = re.search(pat, user_input, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
 @router.message(YT.banner, F.text & ~F.text.startswith("/"))
 async def banner_process(message: Message, state: FSMContext) -> None:
     info = message.text.strip()
+    banner_text = _extract_banner_text(info)
     waiting = await message.answer("⏳ Rasm uchun prompt tayyorlanmoqda...")
     try:
         prompt = await generate_image_prompt(
@@ -529,6 +546,8 @@ async def banner_process(message: Message, state: FSMContext) -> None:
         await waiting.edit_text("🎨 Banner chizilmoqda... (30-60 soniya)")
         image = await generate_image(prompt, aspect_ratio="16:9")
         image = resize_image(image, 2560, 1440)
+        if banner_text:
+            image = add_banner_text(image, banner_text)
         usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Banner yaratish xatosi")

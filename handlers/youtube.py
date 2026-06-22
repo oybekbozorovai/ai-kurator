@@ -539,12 +539,9 @@ def _extract_banner_text(user_input: str) -> str | None:
 async def banner_process(message: Message, state: FSMContext) -> None:
     info = message.text.strip()
     banner_text = _extract_banner_text(info)
-    waiting = await message.answer("⏳ Rasm uchun prompt tayyorlanmoqda...")
+    waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
-        prompt = await generate_image_prompt(
-            info, kind="banner", telegram_id=message.from_user.id)
-        await waiting.edit_text("🎨 Banner chizilmoqda... (30-60 soniya)")
-        image = await generate_image(prompt, aspect_ratio="16:9")
+        image = await generate_image(info, aspect_ratio="16:9")
         image = resize_image(image, 2560, 1440)
         if banner_text:
             image = add_banner_text(image, banner_text)

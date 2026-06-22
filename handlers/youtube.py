@@ -40,7 +40,7 @@ from services.youtube_api import fetch_channel_analysis, is_configured as yt_api
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
 from services.image_service import add_text_to_thumbnail, resize_image, overlay_banner_frame, add_banner_text
-from services.replicate_service import generate_image, generate_img2img
+from services.replicate_service import generate_image, generate_img2img, generate_banner_image
 
 logger = logging.getLogger(__name__)
 router = Router(name="youtube")
@@ -552,17 +552,16 @@ async def banner_process(message: Message, state: FSMContext) -> None:
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
         # Safe zone: asosiy ob'ektlar markaziy band ichida (y=545–895)
-        flux_prompt = (
+        ideogram_prompt = (
             f"{info}. "
-            "YouTube channel banner, 2560x1440. "
+            "YouTube channel banner, wide 16:9 format. "
             "CRITICAL COMPOSITION: all main subjects, characters, logos and focal elements "
             "must be placed ONLY in the CENTER HORIZONTAL BAND (middle strip, "
             "roughly the middle third of the image height). "
-            "Top ~38% and bottom ~38% of the image should contain only background, "
-            "sky, environment, gradients or decorative elements — NO key subjects there. "
-            "Do NOT render any text in the image."
+            "Top ~38% and bottom ~38% of the image: background, sky, environment or gradient only. "
+            "NO text, NO words, NO letters anywhere in the image."
         )
-        image = await generate_image(flux_prompt, aspect_ratio="16:9")
+        image = await generate_banner_image(ideogram_prompt)
         image = resize_image(image, 2560, 1440)
         if banner_text:
             image = add_banner_text(image, banner_text)

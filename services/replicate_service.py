@@ -11,6 +11,7 @@ from config import (
     FLUX_DEV_MODEL,
     FLUX_MODEL,
     FLUX_REDUX_MODEL,
+    IDEOGRAM_MODEL,
     REPLICATE_API_TOKEN,
 )
 
@@ -43,6 +44,36 @@ def _run_sync(prompt: str, aspect_ratio: str) -> bytes:
     # Aks holda bu URL satr — yuklab olamiz
     with urllib.request.urlopen(str(item)) as resp:
         return resp.read()
+
+
+def _run_ideogram_sync(prompt: str) -> bytes:
+    """Ideogram v2 Turbo — banner uchun (2560x1440, 16:9). Sinxron."""
+    client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+    output = client.run(
+        IDEOGRAM_MODEL,
+        input={
+            "prompt": prompt,
+            "aspect_ratio": "16/9",
+            "style_type": "DESIGN",
+            "negative_prompt": "text, watermark, words, letters, blurry, low quality",
+            "magic_prompt_option": "OFF",  # promptni o'zimiz yozamiz
+        },
+    )
+    item = output[0] if isinstance(output, list) else output
+    if hasattr(item, "read"):
+        return item.read()
+    with urllib.request.urlopen(str(item)) as resp:
+        return resp.read()
+
+
+async def generate_banner_image(prompt: str) -> bytes:
+    """Ideogram v2 Turbo orqali YouTube banner yaratadi (async).
+    Kompozitsiya sifati Flux'dan yuqori — safe zone uchun mos.
+    """
+    if not REPLICATE_API_TOKEN:
+        raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
+    logger.info("Ideogram banner so'rovi")
+    return await asyncio.to_thread(_run_ideogram_sync, prompt)
 
 
 async def generate_image(prompt: str, aspect_ratio: str = "1:1") -> bytes:

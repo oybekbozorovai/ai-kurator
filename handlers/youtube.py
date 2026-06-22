@@ -652,6 +652,19 @@ async def niche_select(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+import re as _re
+
+_TEXT_PATTERN = _re.compile(
+    r'Bold\s+(?:modern\s+)?(?:soft\s+)?(?:elegant\s+)?(?:3D\s+)?text\s+"[^"]*"[^.]*\.\s*',
+    _re.IGNORECASE,
+)
+
+
+def _no_text_prompt(prompt: str) -> str:
+    """Promptdan matn ko'rsatmasini olib tashlaydi — PIL text ishlatadi."""
+    return _TEXT_PATTERN.sub("", prompt).strip()
+
+
 async def _generate_banner(prompt: str) -> bytes:
     """Imagen 3 orqali banner yaratadi; xato bo'lsa Ideogramga fallback."""
     try:
@@ -663,23 +676,28 @@ async def _generate_banner(prompt: str) -> bytes:
 
 async def _generate_niche_image(niche_key: str, kind: str,
                                 channel_name: str) -> bytes:
-    """Niche promptiga {name} o'rniga kanal nomini qo'yib rasm yaratadi."""
+    """Niche promptiga {name} o'rniga kanal nomini qo'yib rasm yaratadi.
+    Banner uchun: Imagen 3 fon chizadi, PIL matnni aniq markazga yozadi.
+    """
     niche = _NICHES[niche_key]
     if niche_key == "custom":
         if kind == "avatar":
             prompt = await generate_image_prompt(channel_name, kind="avatar")
             return resize_image(await generate_image(prompt, aspect_ratio="1:1"), 1024, 1024)
         else:
-            return resize_image(await _generate_banner(channel_name), 2560, 1440)
+            bg = resize_image(await _generate_banner(channel_name), 2560, 1440)
+            return add_banner_text(bg, channel_name)
 
     template = niche[kind]
-    prompt = template.replace("{name}", channel_name)
     if kind == "avatar":
+        prompt = template.replace("{name}", channel_name)
         image = await generate_image(prompt, aspect_ratio="1:1")
         return resize_image(image, 1024, 1024)
     else:
-        image = await _generate_banner(prompt)
-        return resize_image(image, 2560, 1440)
+        # Matnni promptdan olib tashlaymiz — PIL aniq markazga yozadi
+        prompt = _no_text_prompt(template.replace("{name}", channel_name))
+        bg = resize_image(await _generate_banner(prompt), 2560, 1440)
+        return add_banner_text(bg, channel_name)
 
 
 @router.message(YT.avatar_name, F.text & ~F.text.startswith("/"))

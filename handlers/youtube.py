@@ -499,7 +499,6 @@ async def avatar_process(message: Message, state: FSMContext) -> None:
 # Banner
 # ============================================================
 
-@router.callback_query(F.data == "menu:banner")
 _BANNER_TEMPLATE = (
     "A vibrant 3D-rendered YouTube gaming channel banner. "
     "A detailed sports car being transported on a flatbed tow truck along a winding country road, "
@@ -513,6 +512,7 @@ _BANNER_TEMPLATE = (
 )
 
 
+@router.callback_query(F.data == "menu:banner")
 async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)

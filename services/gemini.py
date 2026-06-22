@@ -263,10 +263,41 @@ async def analyze_channel(data: dict, telegram_id=None) -> str:
     return text.strip()
 
 
+def _image_prompt_via_claude(user_input: str, kind: str) -> str:
+    """Claude Haiku orqali Flux uchun ingliz tilidagi prompt yaratadi."""
+    import os
+    import anthropic
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY sozlanmagan")
+    rules = _IMAGE_RULES.get(kind, _IMAGE_RULES["avatar"])
+    client = anthropic.Anthropic(api_key=api_key)
+    msg = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"User description (may be in Uzbek/Russian): {user_input}\n\n"
+                f"Write a detailed English image generation prompt for Flux AI for a YouTube {kind}.\n"
+                f"Requirements: {rules}.\n\n"
+                "Output only the English prompt, nothing else."
+            ),
+        }],
+    )
+    return msg.content[0].text.strip().strip('"')
+
+
 async def generate_image_prompt(user_input: str, kind: str, telegram_id=None) -> str:
     """Foydalanuvchi tavsifidan Flux AI uchun ingliz tilidagi rasm prompti yaratadi.
     kind: 'avatar' | 'banner' | 'thumbnail'
+    Avval Claude Haiku ishlatadi; xato bo'lsa Gemini ga fallback.
     """
+    try:
+        return await asyncio.to_thread(_image_prompt_via_claude, user_input, kind)
+    except Exception as claude_err:
+        logger.warning("Claude prompt xatosi (%s), Gemini ga fallback: %s", kind, claude_err)
+
     rules = _IMAGE_RULES.get(kind, _IMAGE_RULES["avatar"])
     prompt = (
         f"Foydalanuvchi tavsifi: {user_input}\n\n"

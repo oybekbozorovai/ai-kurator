@@ -9,3 +9,4 @@ cachetools==5.5.0
 fpdf2==2.8.1
 replicate==1.0.7
 qrcode==8.2
+anthropic>=0.40.0

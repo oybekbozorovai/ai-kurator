@@ -95,120 +95,138 @@ GUIDE = {
 # "{name}" o'rniga o'quvchining kanal nomi qo'yiladi.
 # "custom" — o'quvchi o'z tavsifini yozadi.
 
+# {name} — o'quvchining kanal nomi, generate vaqtida almashtiriladi
 _NICHES: dict[str, dict] = {
     "beamng": {
         "label": "BeamNG Flatbed",
-        "banner": (
-            "A vibrant 3D-rendered YouTube gaming channel banner for BeamNG.Drive. "
-            "A detailed sports car being transported on a flatbed tow truck along a winding country road, "
-            "surrounded by rolling green hills, scattered potholes, and a bright blue sky with soft clouds. "
-            "Dynamic dust clouds, motion blur, and flying debris convey high-speed movement and physics-driven energy. "
-            "Cinematic lighting, ultra-sharp details, colorful and energetic atmosphere. "
-            "CRITICAL COMPOSITION: all main subjects in CENTER HORIZONTAL BAND. "
-            "Top ~38% and bottom ~38%: background/sky only. "
-            "Optimized for 2560x1440 pixels, safe area 1546x423. NO text, NO words in the image."
-        ),
         "avatar": (
-            "A professional YouTube gaming channel avatar/logo, 800x800 pixels, 1:1 square ratio. "
-            "Bold 3D emblem featuring a detailed sports car with visible crash physics and flying debris, dynamic motion. "
-            "Vivid energy colors — electric blue, orange, and red gradients with glowing effects. "
-            "Dark background with subtle hexagonal pattern and light streaks. "
-            "Centered circular composition, sharp details, esports logo style, eye-catching and professional. "
-            "4K quality. NO text, NO words in the image."
+            "A professional YouTube gaming channel avatar, 800x800 pixels, 1:1 ratio. "
+            "A 3D sports car loaded on a flatbed tow truck with dust and motion effects. "
+            "Electric blue and orange neon colors, glowing edges, dark background with subtle tech pattern. "
+            'Bold text "{name}". '
+            "Centered circular composition, esports logo style, sharp and eye-catching. 4K quality."
+        ),
+        "banner": (
+            "A vibrant YouTube gaming banner, 2560x1440 pixels, 16:9 ratio. "
+            "A 3D sports car being transported on a flatbed truck along a country road "
+            "with green hills, potholes, dust and motion blur, bright blue sky. "
+            'Bold modern 3D text "{name}" in the center. '
+            "Cinematic lighting, colorful, ultra-sharp. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "stickman": {
         "label": "Stickman Dismounting",
-        "banner": (
-            "YouTube gaming channel banner 2560x1440. Stickman ragdoll physics action scene, "
-            "multiple stickman figures flying through the air with dramatic impact and debris. "
-            "Bright vivid colors, comic-style energy effects, dynamic poses. "
-            "CRITICAL COMPOSITION: all stickman figures in CENTER HORIZONTAL BAND. "
-            "Top and bottom: gradient background only. NO text, NO words in the image."
-        ),
         "avatar": (
-            "YouTube gaming channel avatar 1:1 square. Stickman ragdoll physics logo, "
-            "single stickman mid-air with impact explosion effects, bright vivid colors, "
-            "comic style, dark background, circular emblem. NO text, NO words in the image."
+            "A fun YouTube gaming channel avatar, 800x800 pixels, 1:1 ratio. "
+            "A 3D ragdoll stickman character mid-fall with motion and impact effects. "
+            "Bright energetic colors — yellow, red, and blue. "
+            "Dynamic dark background with light streaks. "
+            'Bold text "{name}". '
+            "Centered circular composition, playful esports logo style, sharp and eye-catching. 4K quality."
+        ),
+        "banner": (
+            "A dynamic YouTube gaming banner, 2560x1440 pixels, 16:9 ratio. "
+            "A 3D ragdoll stickman tumbling down stairs and ramps with comic impact effects, "
+            "motion blur, and energy bursts. Bright playful colors, dynamic background. "
+            'Bold modern 3D text "{name}" in the center. '
+            "Cinematic lighting, ultra-sharp. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "wrongeyes": {
         "label": "Wrong Eyes",
-        "banner": (
-            "YouTube channel banner 2560x1440. Funny viral 'wrong eyes' meme style, "
-            "popular cartoon characters with misplaced eyes, surreal humor, bright colors, "
-            "playful and eye-catching composition. "
-            "CRITICAL COMPOSITION: main characters in CENTER HORIZONTAL BAND. "
-            "Top and bottom: colorful gradient background only. NO text, NO words in the image."
-        ),
         "avatar": (
-            "YouTube channel avatar 1:1 square. Funny cartoon character with misplaced eyes "
-            "in 'wrong eyes' meme style, bright vivid colors, cute and humorous, circular logo. "
-            "NO text, NO words in the image."
+            "A bold YouTube channel avatar, 800x800 pixels, 1:1 ratio. "
+            "A stylized pair of cartoon eyes looking in odd directions, fun and quirky style. "
+            "Vibrant contrasting colors, glowing outline, clean dark background. "
+            'Bold text "{name}". '
+            "Centered circular composition, modern logo style, sharp and eye-catching. 4K quality."
+        ),
+        "banner": (
+            "A quirky fun YouTube banner, 2560x1440 pixels, 16:9 ratio. "
+            "Big cartoon eyes looking in wrong directions with a playful comedic vibe, "
+            "colorful abstract background with energy shapes. "
+            'Bold modern 3D text "{name}" in the center. '
+            "Bright colors, high contrast, ultra-sharp. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "asmr_baby": {
         "label": "ASMR BABY",
-        "banner": (
-            "YouTube ASMR channel banner 2560x1440. Soft pastel colors, cute baby-themed items "
-            "— plush toys, colorful rattles, bubbles, gentle bokeh light effects. "
-            "Dreamy, soft, calming atmosphere. "
-            "CRITICAL COMPOSITION: all objects in CENTER HORIZONTAL BAND. "
-            "Top and bottom: soft gradient background only. NO text, NO words in the image."
-        ),
         "avatar": (
-            "YouTube ASMR channel avatar 1:1 square. Cute baby-themed emblem, "
-            "soft pastel colors, fluffy plush toy or colorful rattle, gentle glow effects, "
-            "circular soft logo. NO text, NO words in the image."
+            "A soft cute YouTube ASMR channel avatar, 800x800 pixels, 1:1 ratio. "
+            "A gentle baby-themed icon with a glowing microphone and soft sound waves. "
+            "Pastel colors — soft pink, baby blue, cream. Dreamy soft lighting, subtle glow. "
+            'Bold soft text "{name}". '
+            "Centered circular composition, clean and adorable. 4K quality."
+        ),
+        "banner": (
+            "A soft calming YouTube ASMR banner, 2560x1440 pixels, 16:9 ratio. "
+            "Cute baby-themed elements with a glowing microphone and gentle sound waves, "
+            "soft toys and pastel bokeh lights. Pastel palette — pink, baby blue, cream. "
+            'Bold elegant text "{name}" in the center. '
+            "Soft dreamy lighting, cozy mood. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "asmr_chupa": {
         "label": "ASMR Chupa-Chups",
-        "banner": (
-            "YouTube ASMR channel banner 2560x1440. Vibrant colorful Chupa-Chups lollipops "
-            "arranged artistically, glossy candy wrappers, pastel and neon colors, "
-            "shiny reflections, satisfying candy aesthetic. "
-            "CRITICAL COMPOSITION: all lollipops in CENTER HORIZONTAL BAND. "
-            "Top and bottom: soft gradient background only. NO text, NO words in the image."
-        ),
         "avatar": (
-            "YouTube ASMR channel avatar 1:1 square. Colorful Chupa-Chups lollipops logo, "
-            "glossy candy, vibrant pastel colors, circular sweet emblem. "
-            "NO text, NO words in the image."
+            "A colorful YouTube ASMR channel avatar, 800x800 pixels, 1:1 ratio. "
+            "A glossy swirl lollipop with a small microphone and soft sound waves. "
+            "Vibrant candy colors — pink, red, yellow swirl. Soft glow, clean playful background. "
+            'Bold text "{name}". '
+            "Centered circular composition, sweet and eye-catching. 4K quality."
+        ),
+        "banner": (
+            "A sweet vibrant YouTube ASMR banner, 2560x1440 pixels, 16:9 ratio. "
+            "Glossy swirl lollipops and candy with a microphone and gentle sound waves, "
+            "colorful soft bokeh background. Candy color palette — pink, red, yellow. "
+            'Bold elegant text "{name}" in the center. '
+            "Soft glossy lighting, sweet relaxing mood. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "asmr_mms": {
         "label": "ASMR MMS",
-        "banner": (
-            "YouTube ASMR channel banner 2560x1440. Colorful M&Ms and Skittles candies "
-            "scattered artistically, vibrant glossy colors, satisfying macro candy photography style. "
-            "CRITICAL COMPOSITION: all candies in CENTER HORIZONTAL BAND. "
-            "Top and bottom: dark or pastel gradient background only. NO text, NO words in the image."
-        ),
         "avatar": (
-            "YouTube ASMR channel avatar 1:1 square. Colorful M&Ms candy logo, "
-            "vibrant glossy candies, circular emblem, satisfying sweet style. "
-            "NO text, NO words in the image."
+            "A colorful YouTube ASMR channel avatar, 800x800 pixels, 1:1 ratio. "
+            "Glossy colorful candy buttons/chocolates with a small microphone and soft sound waves. "
+            "Vibrant rainbow candy colors, soft glow, clean background. "
+            'Bold text "{name}". '
+            "Centered circular composition, fun and eye-catching. 4K quality."
+        ),
+        "banner": (
+            "A vibrant YouTube ASMR banner, 2560x1440 pixels, 16:9 ratio. "
+            "Colorful glossy candy buttons and chocolates scattered with a microphone and gentle sound waves, "
+            "rainbow bokeh background. Bright candy colors. "
+            'Bold elegant text "{name}" in the center. '
+            "Soft glossy lighting, satisfying relaxing mood. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "roblox": {
         "label": "Roblox",
-        "banner": (
-            "YouTube gaming channel banner 2560x1440. Roblox game style, "
-            "colorful blocky 3D characters and game world, vibrant bright colors, "
-            "fun energetic gaming atmosphere. "
-            "CRITICAL COMPOSITION: all characters in CENTER HORIZONTAL BAND. "
-            "Top and bottom: colorful sky/background only. NO text, NO words in the image."
-        ),
         "avatar": (
-            "YouTube gaming channel avatar 1:1 square. Roblox-style 3D blocky character, "
-            "vibrant colors, fun gaming logo, circular emblem. "
-            "NO text, NO words in the image."
+            "A fun YouTube gaming channel avatar, 800x800 pixels, 1:1 ratio. "
+            "A blocky 3D voxel character head in playful style, bright primary colors, "
+            "glowing edges, clean dark background with blocky pattern. "
+            'Bold text "{name}". '
+            "Centered circular composition, esports logo style, sharp and eye-catching. 4K quality."
+        ),
+        "banner": (
+            "A vibrant YouTube gaming banner, 2560x1440 pixels, 16:9 ratio. "
+            "Blocky 3D voxel characters and a colorful blocky world with energy effects and floating cubes. "
+            "Bright primary colors, dynamic background. "
+            'Bold modern 3D text "{name}" in the center. '
+            "Cinematic lighting, ultra-sharp. "
+            "Content centered within a safe area of 1546x423 pixels. 4K quality."
         ),
     },
     "custom": {
         "label": "🖊 O'z yo'nalishim (AI)",
-        "banner": None,  # o'quvchi o'zi yozadi
+        "banner": None,
         "avatar": None,
     },
 }
@@ -636,27 +654,25 @@ async def niche_select(callback: CallbackQuery, state: FSMContext) -> None:
 
 async def _generate_niche_image(niche_key: str, kind: str,
                                 channel_name: str) -> bytes:
-    """Niche promptiga kanal nomini qo'shib rasm yaratadi."""
+    """Niche promptiga {name} o'rniga kanal nomini qo'yib rasm yaratadi.
+    Imagen 3 matnni o'zi chizadi — PIL overlay ishlatilmaydi.
+    """
     niche = _NICHES[niche_key]
     if niche_key == "custom":
-        # channel_name = o'quvchining o'z tavsifi
         if kind == "avatar":
             prompt = await generate_image_prompt(channel_name, kind="avatar")
             return resize_image(await generate_image(prompt, aspect_ratio="1:1"), 1024, 1024)
         else:
-            from services.gemini import generate_banner_imagen as _gen_banner
-            return resize_image(await _gen_banner(channel_name), 2560, 1440)
+            return resize_image(await generate_banner_imagen(channel_name), 2560, 1440)
 
     template = niche[kind]
+    prompt = template.replace("{name}", channel_name)
     if kind == "avatar":
-        image = await generate_image(template, aspect_ratio="1:1")
-        image = resize_image(image, 1024, 1024)
-        image = add_banner_text(image, channel_name)  # reuse text overlay at 1:1 scale
+        image = await generate_image(prompt, aspect_ratio="1:1")
+        return resize_image(image, 1024, 1024)
     else:
-        image = await generate_banner_imagen(template)
-        image = resize_image(image, 2560, 1440)
-        image = add_banner_text(image, channel_name)
-    return image
+        image = await generate_banner_imagen(prompt)
+        return resize_image(image, 2560, 1440)
 
 
 @router.message(YT.avatar_name, F.text & ~F.text.startswith("/"))

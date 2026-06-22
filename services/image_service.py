@@ -70,19 +70,25 @@ def resize_image(image_bytes: bytes, width: int, height: int) -> bytes:
 
 
 def add_banner_text(image_bytes: bytes, text: str) -> bytes:
-    """Banner rasmiga (2560x1440) markazda katta matn qo'shadi — oltin, qora outline."""
+    """Banner rasmiga (2560x1440) safe zone markaziga katta matn qo'shadi — oltin, qora outline.
+    Safe zone: x=640–1920, y=545–895. Matn markaziy gorizontal o'qda joylashadi.
+    """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = img.resize((2560, 1440), Image.LANCZOS)
     draw = ImageDraw.Draw(img)
 
-    font_size = 200
+    # Shrift hajmini safe zone balandligiga moslashtir (350px → ~160px shrift)
+    font_size = 160
     font = _load_font(font_size)
     text_upper = text.upper()
 
     bbox = draw.textbbox((0, 0), text_upper, font=font)
     text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    # Gorizontal markaz; vertikal — safe zone markazi (545+895)/2 = 720
     x = (2560 - text_w) // 2
-    y = 580  # safe zone ichida (y ~420-1020)
+    y = 720 - text_h // 2  # safe zone vertikal markazi
 
     for dx, dy in [(-8, 0), (8, 0), (0, -8), (0, 8), (-6, -6), (6, 6), (-6, 6), (6, -6)]:
         draw.text((x + dx, y + dy), text_upper, font=font, fill="black")

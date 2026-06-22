@@ -551,7 +551,18 @@ async def banner_process(message: Message, state: FSMContext) -> None:
     banner_text = _extract_banner_text(info)
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
-        image = await generate_image(info, aspect_ratio="16:9")
+        # Safe zone: asosiy ob'ektlar markaziy band ichida (y=545–895)
+        flux_prompt = (
+            f"{info}. "
+            "YouTube channel banner, 2560x1440. "
+            "CRITICAL COMPOSITION: all main subjects, characters, logos and focal elements "
+            "must be placed ONLY in the CENTER HORIZONTAL BAND (middle strip, "
+            "roughly the middle third of the image height). "
+            "Top ~38% and bottom ~38% of the image should contain only background, "
+            "sky, environment, gradients or decorative elements — NO key subjects there. "
+            "Do NOT render any text in the image."
+        )
+        image = await generate_image(flux_prompt, aspect_ratio="16:9")
         image = resize_image(image, 2560, 1440)
         if banner_text:
             image = add_banner_text(image, banner_text)

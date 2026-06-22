@@ -8,7 +8,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import TELEGRAM_BOT_TOKEN
 from handlers import admin, certificate, group, private, support, youtube
 from services.scheduler import (
-    daily_reminder_loop,
     kick_expired_loop,
     support_notifier_loop,
 )
@@ -42,11 +41,7 @@ async def main() -> None:
     asyncio.create_task(kick_expired_loop(bot))
     logger.info("Auto-kick scheduler ishga tushirildi")
 
-    # Kunlik cheklist eslatmasi — har kuni bir marta
-    asyncio.create_task(daily_reminder_loop(bot))
-    logger.info("Kunlik eslatma scheduler ishga tushirildi")
-
-    # Texnik yordam javoblarini o'quvchilarga yetkazish — har 1 daqiqada
+# Texnik yordam javoblarini o'quvchilarga yetkazish — har 1 daqiqada
     asyncio.create_task(support_notifier_loop(bot))
     logger.info("Texnik yordam notifier ishga tushirildi")
 

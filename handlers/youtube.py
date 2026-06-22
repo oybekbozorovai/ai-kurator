@@ -528,7 +528,7 @@ async def banner_process(message: Message, state: FSMContext) -> None:
             info, kind="banner", telegram_id=message.from_user.id)
         await waiting.edit_text("🎨 Banner chizilmoqda... (30-60 soniya)")
         image = await generate_image(prompt, aspect_ratio="16:9")
-        image = overlay_banner_frame(image)
+        image = resize_image(image, 2560, 1440)
         usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Banner yaratish xatosi")
@@ -539,7 +539,7 @@ async def banner_process(message: Message, state: FSMContext) -> None:
     await waiting.delete()
     sent = await message.answer_document(
         BufferedInputFile(image, filename="banner.png"),
-        caption="✅ Banneringiz tayyor! (2560x1440)\n\nRamka — qurilmalar bo'yicha safe zone ko'rsatadi." + GUIDE["banner"],
+        caption="✅ Banneringiz tayyor! (2560x1440)" + GUIDE["banner"],
         reply_markup=home_kb(),
     )
     log_generation(message.from_user.id, "banner", "image",

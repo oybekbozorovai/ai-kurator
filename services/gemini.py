@@ -143,8 +143,13 @@ _IMAGE_RULES = {
         "works well as a small circular YouTube channel icon"
     ),
     "banner": (
-        "YouTube channel banner, 16:9, professional, modern, "
-        "with a text-free safe zone in the center, visually balanced"
+        "YouTube channel banner 2560x1440, 16:9. "
+        "IMPORTANT COMPOSITION RULE: all main subjects, characters, objects must be "
+        "placed strictly in the CENTER HORIZONTAL BAND (middle third of height, "
+        "roughly y=420 to y=1020 out of 1440). "
+        "Top and bottom areas should be background/sky/environment only. "
+        "Left and right edges can have decorative elements but keep center clear. "
+        "Professional, modern, no text in the image"
     ),
     "thumbnail": (
         "YouTube video thumbnail, 16:9, dramatic, emotional, "

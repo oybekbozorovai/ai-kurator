@@ -57,12 +57,28 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str,
     return lines
 
 
+_BANNER_FRAME_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "banner_frame.png")
+
+
 def resize_image(image_bytes: bytes, width: int, height: int) -> bytes:
     """Rasmni berilgan o'lchamga keltiradi (PNG qaytaradi)."""
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = img.resize((width, height), Image.LANCZOS)
     out = io.BytesIO()
     img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def overlay_banner_frame(image_bytes: bytes) -> bytes:
+    """Banner rasmi (2560x1440) ustiga qurilma safe-zone ramkasini qo'yadi."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    img = img.resize((2560, 1440), Image.LANCZOS)
+    if os.path.exists(_BANNER_FRAME_PATH):
+        frame = Image.open(_BANNER_FRAME_PATH).convert("RGBA")
+        frame = frame.resize((2560, 1440), Image.LANCZOS)
+        img.paste(frame, (0, 0), mask=frame)
+    out = io.BytesIO()
+    img.convert("RGB").save(out, format="PNG")
     return out.getvalue()
 
 

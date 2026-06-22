@@ -499,6 +499,19 @@ async def avatar_process(message: Message, state: FSMContext) -> None:
 # ============================================================
 
 @router.callback_query(F.data == "menu:banner")
+_BANNER_TEMPLATE = (
+    "A vibrant 3D-rendered YouTube gaming channel banner. "
+    "A detailed sports car being transported on a flatbed tow truck along a winding country road, "
+    "surrounded by rolling green hills, scattered potholes, and a bright blue sky with soft clouds. "
+    "Dynamic dust clouds, motion blur, and flying debris convey high-speed movement and physics-driven energy. "
+    "Cinematic lighting, ultra-sharp details, colorful and energetic atmosphere. "
+    "CRITICAL COMPOSITION: all main subjects must be in the CENTER HORIZONTAL BAND (middle third of height). "
+    "Top ~38% and bottom ~38%: background/sky/environment only. "
+    "Optimized for 2560x1440 pixels, important content centered within safe area 1546x423 pixels. "
+    "NO text, NO words, NO letters in the image."
+)
+
+
 async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
@@ -510,61 +523,21 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(YT.banner)
     await callback.message.edit_text(
         "🎨 Banner yaratish\n\n"
-        "Qanday banner xohlaysiz? Batafsil yozing — "
-        "kanal nomi, mavzu, ranglar va uslub.\n\n"
-        "Masalan: BeamNG Drive o'yin kanali uchun banner, sinib ketgan "
-        "mashinalar, dramatik, qizil va qora ranglarda",
+        "Kanal nomingizni yozing — banner tayyor bo'ladi.\n\n"
+        "Masalan: Oybek BeamNG",
         reply_markup=home_kb(),
     )
     await callback.answer()
 
 
-def _extract_banner_text(user_input: str) -> str | None:
-    """Foydalanuvchi so'rovidan banner uchun matn ajratadi.
-    O'zbek: 'Oybek BeamNG deb yozib ber' — matn trigger OLDIN keladi.
-    """
-    import re
-    # O'zbek: "<matn> deb yoz(ib ber)" — matn oldin
-    m = re.search(
-        r"([A-Za-z0-9][A-Za-z0-9 _\-\.]{1,38}[A-Za-z0-9])\s+deb\s+yoz",
-        user_input, re.IGNORECASE
-    )
-    if m:
-        return m.group(1).strip()
-    # "matn: <matn>" yoki "text: <matn>"
-    m = re.search(
-        r"(?:matn|text)[:\s]+['\"]?([A-Za-z0-9 _\-\.]{3,40})['\"]?",
-        user_input, re.IGNORECASE
-    )
-    if m:
-        return m.group(1).strip()
-    # Qo'shtirnoq ichidagi matn
-    m = re.search(r"['\"]([A-Za-z0-9 _\-\.]{3,40})['\"]", user_input)
-    if m:
-        return m.group(1).strip()
-    return None
-
-
 @router.message(YT.banner, F.text & ~F.text.startswith("/"))
 async def banner_process(message: Message, state: FSMContext) -> None:
-    info = message.text.strip()
-    banner_text = _extract_banner_text(info)
+    channel_name = message.text.strip()
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
-        # Safe zone: asosiy ob'ektlar markaziy band ichida (y=545–895)
-        ideogram_prompt = (
-            f"{info}. "
-            "YouTube channel banner, wide 16:9 format. "
-            "CRITICAL COMPOSITION: all main subjects, characters, logos and focal elements "
-            "must be placed ONLY in the CENTER HORIZONTAL BAND (middle strip, "
-            "roughly the middle third of the image height). "
-            "Top ~38% and bottom ~38% of the image: background, sky, environment or gradient only. "
-            "NO text, NO words, NO letters anywhere in the image."
-        )
-        image = await generate_banner_image(ideogram_prompt)
+        image = await generate_banner_image(_BANNER_TEMPLATE)
         image = resize_image(image, 2560, 1440)
-        if banner_text:
-            image = add_banner_text(image, banner_text)
+        image = add_banner_text(image, channel_name)
         usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Banner yaratish xatosi")

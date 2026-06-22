@@ -36,6 +36,7 @@ from services.auth import (
 )
 from services.scheduler import kick_expired_once
 from services import usage
+from services.broadcast_store import delete_messages, get_messages, list_broadcasts, save_message
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -71,6 +72,8 @@ HELP_TEXT = (
     "ℹ️ Raqamlar A.Y.P.I dashboard orqali patokka qo'shiladi.\n\n"
     "Boshqaruv:\n"
     "/broadcast — barcha o'quvchilarga e'lon yuborish\n"
+    "/list_broadcasts — yuborilgan broadcastlar tarixi\n"
+    "/delete_broadcast <type> — broadcastni barchadan o'chirish\n"
     "/ban_user 123456789 — ban\n"
     "/unban_user 123456789 — banni olib tashlash\n"
     "/free_phone +998901234567 — raqamni bo'shatish (boshqa akkount qayta kira oladi)\n"
@@ -495,21 +498,85 @@ async def broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -
         return
     await callback.message.edit_text("📤 Yuborilmoqda...")
 
+    # broadcast_type: sana + vaqt (masalan "2026-06-23T14:30")
+    broadcast_type = datetime.utcnow().strftime("broadcast_%Y-%m-%dT%H:%M")
+
     ids = list_all_user_ids()
     sent = 0
     failed = 0
     for uid in ids:
         try:
-            await bot.send_message(uid, text)
+            msg = await bot.send_message(uid, text)
+            save_message(uid, msg.message_id, broadcast_type)
             sent += 1
         except (TelegramBadRequest, TelegramForbiddenError):
-            failed += 1  # bloklagan yoki akkount o'chgan
+            failed += 1
         except Exception as e:
             failed += 1
             logger.warning("E'lon yuborilmadi (user=%s): %s", uid, e)
-        await asyncio.sleep(0.05)  # Telegram limitlariga moslashish
+        await asyncio.sleep(0.05)
 
     await callback.message.answer(
         f"✅ E'lon yuborildi: {sent} ta\n"
-        f"❌ Yetib bormadi: {failed} ta (bloklagan/o'chirilgan)"
+        f"❌ Yetib bormadi: {failed} ta (bloklagan/o'chirilgan)\n\n"
+        f"🗑 O'chirish uchun: /delete_broadcast {broadcast_type}"
+    )
+
+
+# ============================================================
+# Broadcast o'chirish
+# ============================================================
+
+@router.message(Command("list_broadcasts"))
+async def cmd_list_broadcasts(message: Message) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    rows = list_broadcasts()
+    if not rows:
+        await message.answer("Hech qanday broadcast topilmadi.")
+        return
+    from collections import Counter
+    counts = Counter(r["broadcast_type"] for r in rows)
+    lines = [f"📋 Broadcast tarixi:\n"]
+    for btype, cnt in counts.most_common():
+        lines.append(f"• {btype} — {cnt} ta\n  /delete_broadcast {btype}")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("delete_broadcast"))
+async def cmd_delete_broadcast(message: Message, bot: Bot) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "Foydalanish: /delete_broadcast <broadcast_type>\n"
+            "Ro'yxat uchun: /list_broadcasts"
+        )
+        return
+    broadcast_type = parts[1].strip()
+    rows = get_messages(broadcast_type)
+    if not rows:
+        await message.answer(f"'{broadcast_type}' uchun xabar topilmadi.")
+        return
+
+    status = await message.answer(f"🗑 {len(rows)} ta xabar o'chirilmoqda...")
+    deleted = 0
+    failed = 0
+    for row in rows:
+        try:
+            await bot.delete_message(row["telegram_id"], row["message_id"])
+            deleted += 1
+        except (TelegramBadRequest, TelegramForbiddenError):
+            failed += 1
+        except Exception as e:
+            failed += 1
+            logger.warning("Xabar o'chirilmadi (user=%s, msg=%s): %s",
+                           row["telegram_id"], row["message_id"], e)
+        await asyncio.sleep(0.05)
+
+    delete_messages(broadcast_type)
+    await status.edit_text(
+        f"✅ O'chirildi: {deleted} ta\n"
+        f"❌ O'chirilmadi: {failed} ta (bloklagan/muddati o'tgan)"
     )

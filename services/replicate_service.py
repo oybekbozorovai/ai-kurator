@@ -53,10 +53,10 @@ def _run_ideogram_sync(prompt: str) -> bytes:
         IDEOGRAM_MODEL,
         input={
             "prompt": prompt,
-            "aspect_ratio": "16/9",
-            "style_type": "DESIGN",
+            "aspect_ratio": "16:9",
+            "style_type": "Design",
             "negative_prompt": "text, watermark, words, letters, blurry, low quality",
-            "magic_prompt_option": "OFF",  # promptni o'zimiz yozamiz
+            "magic_prompt_option": "Off",
         },
     )
     item = output[0] if isinstance(output, list) else output

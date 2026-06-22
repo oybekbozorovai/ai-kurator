@@ -301,7 +301,7 @@ def _generate_banner_imagen_sync(prompt: str) -> bytes:
 
     client = new_genai.Client(api_key=GEMINI_API_KEY)
     result = client.models.generate_images(
-        model="imagen-3.0-generate-002",
+        model="imagen-3.0-generate-001",
         prompt=prompt,
         config=genai_types.GenerateImagesConfig(
             number_of_images=1,

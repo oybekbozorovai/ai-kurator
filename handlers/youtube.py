@@ -53,8 +53,10 @@ class YT(StatesGroup):
     channel_analysis = State()  # kanal analizi — kanal linki kutilmoqda
     channel = State()         # kanal SEO — mavzu kutilmoqda
     video = State()           # video SEO — mavzu kutilmoqda
-    avatar = State()          # avatar — tavsif kutilmoqda
-    banner = State()          # banner — ma'lumot kutilmoqda
+    avatar = State()          # avatar — yo'nalish tanlash
+    avatar_name = State()     # avatar — kanal nomi kutilmoqda
+    banner = State()          # banner — yo'nalish tanlash
+    banner_name = State()     # banner — kanal nomi kutilmoqda
     thumb_topic = State()     # thumbnail — video mavzusi
     thumb_text = State()      # thumbnail — ustki matn
     thumb_position = State()  # thumbnail — matn joylashuvi
@@ -85,6 +87,144 @@ GUIDE = {
     "banner": "\n\n📍 Qo'yish: Studio → Sozlash → Brending → Banner rasm",
     "thumbnail": "\n\n📍 Qo'yish: Studio → Kontent → video → Thumbnail → 'Faylni yuklash'",
 }
+
+
+# ============================================================
+# Yo'nalishlar (niche) — har biri uchun banner va avatar promptlari
+# ============================================================
+# "{name}" o'rniga o'quvchining kanal nomi qo'yiladi.
+# "custom" — o'quvchi o'z tavsifini yozadi.
+
+_NICHES: dict[str, dict] = {
+    "beamng": {
+        "label": "BeamNG Flatbed",
+        "banner": (
+            "A vibrant 3D-rendered YouTube gaming channel banner for BeamNG.Drive. "
+            "A detailed sports car being transported on a flatbed tow truck along a winding country road, "
+            "surrounded by rolling green hills, scattered potholes, and a bright blue sky with soft clouds. "
+            "Dynamic dust clouds, motion blur, and flying debris convey high-speed movement and physics-driven energy. "
+            "Cinematic lighting, ultra-sharp details, colorful and energetic atmosphere. "
+            "CRITICAL COMPOSITION: all main subjects in CENTER HORIZONTAL BAND. "
+            "Top ~38% and bottom ~38%: background/sky only. "
+            "Optimized for 2560x1440 pixels, safe area 1546x423. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "A professional YouTube gaming channel avatar/logo, 800x800 pixels, 1:1 square ratio. "
+            "Bold 3D emblem featuring a detailed sports car with visible crash physics and flying debris, dynamic motion. "
+            "Vivid energy colors — electric blue, orange, and red gradients with glowing effects. "
+            "Dark background with subtle hexagonal pattern and light streaks. "
+            "Centered circular composition, sharp details, esports logo style, eye-catching and professional. "
+            "4K quality. NO text, NO words in the image."
+        ),
+    },
+    "stickman": {
+        "label": "Stickman Dismounting",
+        "banner": (
+            "YouTube gaming channel banner 2560x1440. Stickman ragdoll physics action scene, "
+            "multiple stickman figures flying through the air with dramatic impact and debris. "
+            "Bright vivid colors, comic-style energy effects, dynamic poses. "
+            "CRITICAL COMPOSITION: all stickman figures in CENTER HORIZONTAL BAND. "
+            "Top and bottom: gradient background only. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "YouTube gaming channel avatar 1:1 square. Stickman ragdoll physics logo, "
+            "single stickman mid-air with impact explosion effects, bright vivid colors, "
+            "comic style, dark background, circular emblem. NO text, NO words in the image."
+        ),
+    },
+    "wrongeyes": {
+        "label": "Wrong Eyes",
+        "banner": (
+            "YouTube channel banner 2560x1440. Funny viral 'wrong eyes' meme style, "
+            "popular cartoon characters with misplaced eyes, surreal humor, bright colors, "
+            "playful and eye-catching composition. "
+            "CRITICAL COMPOSITION: main characters in CENTER HORIZONTAL BAND. "
+            "Top and bottom: colorful gradient background only. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "YouTube channel avatar 1:1 square. Funny cartoon character with misplaced eyes "
+            "in 'wrong eyes' meme style, bright vivid colors, cute and humorous, circular logo. "
+            "NO text, NO words in the image."
+        ),
+    },
+    "asmr_baby": {
+        "label": "ASMR BABY",
+        "banner": (
+            "YouTube ASMR channel banner 2560x1440. Soft pastel colors, cute baby-themed items "
+            "— plush toys, colorful rattles, bubbles, gentle bokeh light effects. "
+            "Dreamy, soft, calming atmosphere. "
+            "CRITICAL COMPOSITION: all objects in CENTER HORIZONTAL BAND. "
+            "Top and bottom: soft gradient background only. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "YouTube ASMR channel avatar 1:1 square. Cute baby-themed emblem, "
+            "soft pastel colors, fluffy plush toy or colorful rattle, gentle glow effects, "
+            "circular soft logo. NO text, NO words in the image."
+        ),
+    },
+    "asmr_chupa": {
+        "label": "ASMR Chupa-Chups",
+        "banner": (
+            "YouTube ASMR channel banner 2560x1440. Vibrant colorful Chupa-Chups lollipops "
+            "arranged artistically, glossy candy wrappers, pastel and neon colors, "
+            "shiny reflections, satisfying candy aesthetic. "
+            "CRITICAL COMPOSITION: all lollipops in CENTER HORIZONTAL BAND. "
+            "Top and bottom: soft gradient background only. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "YouTube ASMR channel avatar 1:1 square. Colorful Chupa-Chups lollipops logo, "
+            "glossy candy, vibrant pastel colors, circular sweet emblem. "
+            "NO text, NO words in the image."
+        ),
+    },
+    "asmr_mms": {
+        "label": "ASMR MMS",
+        "banner": (
+            "YouTube ASMR channel banner 2560x1440. Colorful M&Ms and Skittles candies "
+            "scattered artistically, vibrant glossy colors, satisfying macro candy photography style. "
+            "CRITICAL COMPOSITION: all candies in CENTER HORIZONTAL BAND. "
+            "Top and bottom: dark or pastel gradient background only. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "YouTube ASMR channel avatar 1:1 square. Colorful M&Ms candy logo, "
+            "vibrant glossy candies, circular emblem, satisfying sweet style. "
+            "NO text, NO words in the image."
+        ),
+    },
+    "roblox": {
+        "label": "Roblox",
+        "banner": (
+            "YouTube gaming channel banner 2560x1440. Roblox game style, "
+            "colorful blocky 3D characters and game world, vibrant bright colors, "
+            "fun energetic gaming atmosphere. "
+            "CRITICAL COMPOSITION: all characters in CENTER HORIZONTAL BAND. "
+            "Top and bottom: colorful sky/background only. NO text, NO words in the image."
+        ),
+        "avatar": (
+            "YouTube gaming channel avatar 1:1 square. Roblox-style 3D blocky character, "
+            "vibrant colors, fun gaming logo, circular emblem. "
+            "NO text, NO words in the image."
+        ),
+    },
+    "custom": {
+        "label": "🖊 O'z yo'nalishim (AI)",
+        "banner": None,  # o'quvchi o'zi yozadi
+        "avatar": None,
+    },
+}
+
+
+def _niche_kb(kind: str) -> "InlineKeyboardMarkup":
+    """Yo'nalish tanlash klaviaturasi. kind='banner' yoki 'avatar'."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    buttons = []
+    for key, niche in _NICHES.items():
+        buttons.append([InlineKeyboardButton(
+            text=niche["label"],
+            callback_data=f"niche:{kind}:{key}",
+        )])
+    buttons.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="menu:home")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ============================================================
@@ -459,30 +599,79 @@ async def avatar_start(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.set_state(YT.avatar)
     await callback.message.edit_text(
-        "🖼 Avatar yaratish\n\n"
-        "Kanalingiz nima haqida? Qanday uslub kerak?\n"
-        "Masalan: BeamNG Drive o'yin kanali, dramatik, qizil-qora ranglarda",
-        reply_markup=home_kb(),
+        "🖼 Avatar yaratish\n\nYo'nalishingizni tanlang:",
+        reply_markup=_niche_kb("avatar"),
     )
     await callback.answer()
 
 
-@router.message(YT.avatar, F.text & ~F.text.startswith("/"))
-async def avatar_process(message: Message, state: FSMContext) -> None:
-    description = message.text.strip()
-    waiting = await message.answer("⏳ Rasm uchun prompt tayyorlanmoqda...")
-    try:
-        prompt = await generate_image_prompt(
-            description, kind="avatar", telegram_id=message.from_user.id)
-        await waiting.edit_text("🎨 Avatar chizilmoqda... (30-60 soniya)")
-        image = await generate_image(prompt, aspect_ratio="1:1")
+@router.callback_query(F.data.startswith("niche:"))
+async def niche_select(callback: CallbackQuery, state: FSMContext) -> None:
+    _, kind, niche_key = callback.data.split(":", 2)
+    niche = _NICHES.get(niche_key)
+    if not niche:
+        await callback.answer("Noma'lum yo'nalish", show_alert=True)
+        return
+    await state.update_data(niche_key=niche_key, kind=kind)
+    if niche_key == "custom":
+        # O'z tavsifini yozadi
+        next_state = YT.avatar_name if kind == "avatar" else YT.banner_name
+        await state.set_state(next_state)
+        await callback.message.edit_text(
+            f"{'🖼 Avatar' if kind == 'avatar' else '🎨 Banner'} yaratish\n\n"
+            "Kanalingiz nima haqida? Qanday uslub kerak?\n"
+            "Batafsil o'zbek yoki ingliz tilida yozing:",
+            reply_markup=home_kb(),
+        )
+    else:
+        next_state = YT.avatar_name if kind == "avatar" else YT.banner_name
+        await state.set_state(next_state)
+        await callback.message.edit_text(
+            f"{'🖼 Avatar' if kind == 'avatar' else '🎨 Banner'} — {niche['label']}\n\n"
+            "Kanal nomingizni yozing:",
+            reply_markup=home_kb(),
+        )
+    await callback.answer()
+
+
+async def _generate_niche_image(niche_key: str, kind: str,
+                                channel_name: str) -> bytes:
+    """Niche promptiga kanal nomini qo'shib rasm yaratadi."""
+    niche = _NICHES[niche_key]
+    if niche_key == "custom":
+        # channel_name = o'quvchining o'z tavsifi
+        if kind == "avatar":
+            prompt = await generate_image_prompt(channel_name, kind="avatar")
+            return resize_image(await generate_image(prompt, aspect_ratio="1:1"), 1024, 1024)
+        else:
+            from services.gemini import generate_banner_imagen as _gen_banner
+            return resize_image(await _gen_banner(channel_name), 2560, 1440)
+
+    template = niche[kind]
+    if kind == "avatar":
+        image = await generate_image(template, aspect_ratio="1:1")
         image = resize_image(image, 1024, 1024)
+        image = add_banner_text(image, channel_name)  # reuse text overlay at 1:1 scale
+    else:
+        image = await generate_banner_imagen(template)
+        image = resize_image(image, 2560, 1440)
+        image = add_banner_text(image, channel_name)
+    return image
+
+
+@router.message(YT.avatar_name, F.text & ~F.text.startswith("/"))
+async def avatar_name_process(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    niche_key = data.get("niche_key", "custom")
+    channel_name = message.text.strip()
+    waiting = await message.answer("🎨 Avatar chizilmoqda... (30-60 soniya)")
+    try:
+        image = await _generate_niche_image(niche_key, "avatar", channel_name)
         usage.record(message.from_user.id, "avatar", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Avatar yaratish xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
         return
-
     await state.clear()
     await waiting.delete()
     sent = await message.answer_document(
@@ -491,26 +680,13 @@ async def avatar_process(message: Message, state: FSMContext) -> None:
         reply_markup=home_kb(),
     )
     log_generation(message.from_user.id, "avatar", "image",
-                   label=f"Avatar — {description[:30]}",
+                   label=f"Avatar — {channel_name[:30]}",
                    result_type="file", file_id=sent.document.file_id)
 
 
 # ============================================================
 # Banner
 # ============================================================
-
-_BANNER_TEMPLATE = (
-    "A vibrant 3D-rendered YouTube gaming channel banner. "
-    "A detailed sports car being transported on a flatbed tow truck along a winding country road, "
-    "surrounded by rolling green hills, scattered potholes, and a bright blue sky with soft clouds. "
-    "Dynamic dust clouds, motion blur, and flying debris convey high-speed movement and physics-driven energy. "
-    "Cinematic lighting, ultra-sharp details, colorful and energetic atmosphere. "
-    "CRITICAL COMPOSITION: all main subjects must be in the CENTER HORIZONTAL BAND (middle third of height). "
-    "Top ~38% and bottom ~38%: background/sky/environment only. "
-    "Optimized for 2560x1440 pixels, important content centered within safe area 1546x423 pixels. "
-    "NO text, NO words, NO letters in the image."
-)
-
 
 @router.callback_query(F.data == "menu:banner")
 async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -523,28 +699,25 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.set_state(YT.banner)
     await callback.message.edit_text(
-        "🎨 Banner yaratish\n\n"
-        "Kanal nomingizni yozing — banner tayyor bo'ladi.\n\n"
-        "Masalan: Oybek BeamNG",
-        reply_markup=home_kb(),
+        "🎨 Banner yaratish\n\nYo'nalishingizni tanlang:",
+        reply_markup=_niche_kb("banner"),
     )
     await callback.answer()
 
 
-@router.message(YT.banner, F.text & ~F.text.startswith("/"))
-async def banner_process(message: Message, state: FSMContext) -> None:
+@router.message(YT.banner_name, F.text & ~F.text.startswith("/"))
+async def banner_name_process(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    niche_key = data.get("niche_key", "custom")
     channel_name = message.text.strip()
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
-        image = await generate_banner_imagen(_BANNER_TEMPLATE)
-        image = resize_image(image, 2560, 1440)
-        image = add_banner_text(image, channel_name)
+        image = await _generate_niche_image(niche_key, "banner", channel_name)
         usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Banner yaratish xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
         return
-
     await state.clear()
     await waiting.delete()
     sent = await message.answer_document(
@@ -553,7 +726,7 @@ async def banner_process(message: Message, state: FSMContext) -> None:
         reply_markup=home_kb(),
     )
     log_generation(message.from_user.id, "banner", "image",
-                   label=f"Banner — {info[:30]}",
+                   label=f"Banner — {channel_name[:30]}",
                    result_type="file", file_id=sent.document.file_id)
 
 

@@ -32,7 +32,7 @@ from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
 from services.auth import is_admin, is_user_approved
 from services.gemini import (
     analyze_channel,
-
+    generate_banner_imagen,
     generate_channel_seo,
     generate_image_prompt,
     generate_video_seo,
@@ -663,7 +663,7 @@ async def _generate_niche_image(niche_key: str, kind: str,
             prompt = await generate_image_prompt(channel_name, kind="avatar")
             return resize_image(await generate_image(prompt, aspect_ratio="1:1"), 1024, 1024)
         else:
-            return resize_image(await generate_banner_image(channel_name), 2560, 1440)
+            return resize_image(await generate_banner_imagen(channel_name), 2560, 1440)
 
     template = niche[kind]
     prompt = template.replace("{name}", channel_name)
@@ -671,7 +671,7 @@ async def _generate_niche_image(niche_key: str, kind: str,
         image = await generate_image(prompt, aspect_ratio="1:1")
         return resize_image(image, 1024, 1024)
     else:
-        image = await generate_banner_image(prompt)
+        image = await generate_banner_imagen(prompt)
         return resize_image(image, 2560, 1440)
 
 

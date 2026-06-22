@@ -294,20 +294,23 @@ def _image_prompt_via_claude(user_input: str, kind: str) -> str:
 
 
 def _generate_banner_imagen_sync(prompt: str) -> bytes:
-    """Imagen 3 orqali banner (16:9) sinxron yaratadi."""
+    """Imagen 3 orqali banner (16:9) sinxron yaratadi. google-genai SDK ishlatiladi."""
     import io as _io
-    imagen = genai.ImageGenerationModel("imagen-3.0-generate-002")
-    result = imagen.generate_images(
+    from google import genai as new_genai
+    from google.genai import types as genai_types
+
+    client = new_genai.Client(api_key=GEMINI_API_KEY)
+    result = client.models.generate_images(
+        model="imagen-3.0-generate-002",
         prompt=prompt,
-        number_of_images=1,
-        aspect_ratio="16:9",
-        safety_filter_level="block_some",
-        person_generation="allow_adult",
+        config=genai_types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio="16:9",
+            output_mime_type="image/png",
+        ),
     )
-    pil_img = result.images[0]._pil_image
-    buf = _io.BytesIO()
-    pil_img.save(buf, format="PNG")
-    return buf.getvalue()
+    image_bytes = result.generated_images[0].image.image_bytes
+    return image_bytes
 
 
 async def generate_banner_imagen(prompt: str) -> bytes:

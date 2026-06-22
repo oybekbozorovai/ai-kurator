@@ -32,6 +32,7 @@ from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
 from services.auth import is_admin, is_user_approved
 from services.gemini import (
     analyze_channel,
+    generate_banner_imagen,
     generate_channel_seo,
     generate_image_prompt,
     generate_video_seo,
@@ -535,7 +536,7 @@ async def banner_process(message: Message, state: FSMContext) -> None:
     channel_name = message.text.strip()
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
-        image = await generate_banner_image(_BANNER_TEMPLATE)
+        image = await generate_banner_imagen(_BANNER_TEMPLATE)
         image = resize_image(image, 2560, 1440)
         image = add_banner_text(image, channel_name)
         usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)

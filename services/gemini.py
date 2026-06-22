@@ -293,6 +293,28 @@ def _image_prompt_via_claude(user_input: str, kind: str) -> str:
     return msg.content[0].text.strip().strip('"')
 
 
+def _generate_banner_imagen_sync(prompt: str) -> bytes:
+    """Imagen 3 orqali banner (16:9) sinxron yaratadi."""
+    import io as _io
+    imagen = genai.ImageGenerationModel("imagen-3.0-generate-002")
+    result = imagen.generate_images(
+        prompt=prompt,
+        number_of_images=1,
+        aspect_ratio="16:9",
+        safety_filter_level="block_some",
+        person_generation="allow_adult",
+    )
+    pil_img = result.images[0]._pil_image
+    buf = _io.BytesIO()
+    pil_img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def generate_banner_imagen(prompt: str) -> bytes:
+    """Imagen 3 (Gemini API) orqali YouTube banner yaratadi — async."""
+    return await asyncio.to_thread(_generate_banner_imagen_sync, prompt)
+
+
 async def generate_image_prompt(user_input: str, kind: str, telegram_id=None) -> str:
     """Foydalanuvchi tavsifidan Flux AI uchun ingliz tilidagi rasm prompti yaratadi.
     kind: 'avatar' | 'banner' | 'thumbnail'

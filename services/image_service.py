@@ -76,13 +76,11 @@ def resize_image(image_bytes: bytes, width: int, height: int) -> bytes:
 
 
 def add_banner_text(image_bytes: bytes, text: str) -> bytes:
-    """Banner rasmiga safe zone markaziga matn yozadi.
+    """Banner rasmiga safe zone to'liq to'ldirib matn yozadi.
 
-    Safe area: 1280x350 (x=640–1920, y=545–895) — barcha qurilmalarda ko'rinadi.
-    Gorizontal: har ikki tomonda 25% padding → text zone = 640px.
-    Vertikal: to'liq safe area (350px) — katta shrift uchun.
-    Ko'p so'zli nomlar qatorlarga bo'linadi — shrift katta qoladi.
-    Uslub: iOS — oq matn, qora shadow + outline, toza sans-serif.
+    Safe area: 1280x350 — matn shu zonani to'liq to'ldiradi.
+    Font haqiqiy pixel balandligiga qarab avtomatik katta bo'ladi.
+    Ko'p so'zli nomlar qatorlarga bo'linadi, har qator max kattalikda.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = img.resize((_BANNER_W, _BANNER_H), Image.LANCZOS)
@@ -90,45 +88,48 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
 
     text_upper = text.upper()
 
-    # To'liq safe area kengligi — 260px shrift sig'ishi uchun padding yo'q
-    max_w = _SAFE_W               # 1280px
-    max_h = _SAFE_H               # 350px
+    # To'liq safe area — hech qanday padding yo'q
+    max_w = _SAFE_W   # 1280px
+    max_h = _SAFE_H   # 350px
 
-    # 260px dan boshlab — mos kelguncha qisqartir (wrapping bilan)
+    # Eng katta mos fontni top — haqiqiy pixel balandligini o'lchaymiz
     font_size = 24
     chosen_lines = [text_upper]
-    for fs in range(260, 23, -8):
+    line_h_px = 100
+
+    for fs in range(350, 23, -4):
         fnt = _load_font(fs)
         lines = _wrap_text(draw, text_upper, fnt, max_w)
-        line_h = int(fs * 1.15)
-        total_h = line_h * len(lines)
+
+        # Haqiqiy balandlik (formula emas, actual pixel)
+        bbox = draw.textbbox((0, 0), "Ag", font=fnt)
+        lh = bbox[3] - bbox[1]
+        total_h = lh * len(lines)
+
         max_lw = max(draw.textlength(ln, font=fnt) for ln in lines)
         if max_lw <= max_w and total_h <= max_h:
             font_size = fs
             chosen_lines = lines
+            line_h_px = lh
             break
 
     font = _load_font(font_size)
-    line_height = int(font_size * 1.15)
-    total_h = line_height * len(chosen_lines)
+    total_h = line_h_px * len(chosen_lines)
 
-    # Safe area markazi
+    # Safe area markazida joylashtir
     cx = _SAFE_X + _SAFE_W // 2
     cy = _SAFE_Y + _SAFE_H // 2
     y_start = cy - total_h // 2
 
-    # Qalin qora outline + kuchli shadow — fonsiz ham har qanday rasmda o'qiladi
     stroke = max(6, font_size // 14)
     shadow_offset = max(5, font_size // 16)
 
     for i, line in enumerate(chosen_lines):
         lw = int(draw.textlength(line, font=font))
         x = cx - lw // 2
-        y = y_start + i * line_height
-        # Shadow (biroz offset)
+        y = y_start + i * line_h_px
         draw.text((x + shadow_offset, y + shadow_offset), line,
                   font=font, fill=(0, 0, 0, 220))
-        # Asosiy oq matn qalin outline bilan
         draw.text((x, y), line, font=font,
                   fill="#FFFFFF", stroke_width=stroke, stroke_fill=(0, 0, 0))
 

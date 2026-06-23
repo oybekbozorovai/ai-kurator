@@ -8,15 +8,21 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
-# Shrift qidiriladigan joylar (birinchi topilgani ishlatiladi).
-# Eng yaxshi natija uchun assets/font.ttf ga qalin (bold) shrift qo'ying.
+# Shrift qidiriladigan joylar — iOS uslubiga yaqin zamonaviy sans-serif
 _FONT_PATHS = [
     os.path.join(os.path.dirname(__file__), "..", "assets", "font.ttf"),
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",   # Linux / Railway
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",       # macOS
-    "/Library/Fonts/Arial Bold.ttf",                           # macOS
-    "C:\\Windows\\Fonts\\arialbd.ttf",                         # Windows
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",  # Railway/Ubuntu
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",          # Linux fallback
+    "/System/Library/Fonts/HelveticaNeue.ttc",                       # macOS (iOS uslubi)
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",             # macOS fallback
+    "/Library/Fonts/Arial Bold.ttf",
+    "C:\\Windows\\Fonts\\arialbd.ttf",
 ]
+
+# YouTube banner safe area konstantalar (2560x1440)
+_BANNER_W, _BANNER_H = 2560, 1440
+_SAFE_X, _SAFE_Y = 640, 545       # safe area boshi
+_SAFE_W, _SAFE_H = 1280, 350      # safe area o'lchami
 
 # Matn ranglari
 _COLORS = {
@@ -70,29 +76,56 @@ def resize_image(image_bytes: bytes, width: int, height: int) -> bytes:
 
 
 def add_banner_text(image_bytes: bytes, text: str) -> bytes:
-    """Banner rasmiga (2560x1440) safe zone markaziga katta matn qo'shadi — oltin, qora outline.
-    Safe zone: x=640–1920, y=545–895. Matn markaziy gorizontal o'qda joylashadi.
+    """Banner rasmiga safe zone markaziga matn yozadi.
+
+    Safe area: 1280x350 (x=640–1920, y=545–895) — barcha qurilmalarda ko'rinadi.
+    Matn zonasi: safe area ichida 25% padding (har tomondan).
+    Shrift: kanal nomi uzunligiga qarab avtomatik kichrayadi.
+    Uslub: iOS — oq matn, qora shadow, toza sans-serif.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = img.resize((2560, 1440), Image.LANCZOS)
+    img = img.resize((_BANNER_W, _BANNER_H), Image.LANCZOS)
     draw = ImageDraw.Draw(img)
 
-    # Shrift hajmini safe zone balandligiga moslashtir (350px → ~160px shrift)
-    font_size = 160
-    font = _load_font(font_size)
     text_upper = text.upper()
 
+    # Matn zonasi: safe area ichida 25% padding
+    pad_x = int(_SAFE_W * 0.25)   # 320px har ikki tomonda
+    pad_y = int(_SAFE_H * 0.25)   # 87px yuqori va pastda
+    max_w = _SAFE_W - pad_x * 2   # 640px
+    max_h = _SAFE_H - pad_y * 2   # 176px
+
+    # Shriftni avtomatik kamaytirish — matn sig'maguncha
+    font_size = 220
+    font = _load_font(font_size)
+    while font_size >= 24:
+        font = _load_font(font_size)
+        bbox = draw.textbbox((0, 0), text_upper, font=font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        if tw <= max_w and th <= max_h:
+            break
+        font_size -= 6
+
     bbox = draw.textbbox((0, 0), text_upper, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
 
-    # Gorizontal markaz; vertikal — safe zone markazi (545+895)/2 = 720
-    x = (2560 - text_w) // 2
-    y = 720 - text_h // 2  # safe zone vertikal markazi
+    # Safe area markazi: x=1280, y=720
+    cx = _SAFE_X + _SAFE_W // 2
+    cy = _SAFE_Y + _SAFE_H // 2
+    x = cx - tw // 2
+    y = cy - th // 2
 
-    for dx, dy in [(-8, 0), (8, 0), (0, -8), (0, 8), (-6, -6), (6, 6), (-6, 6), (6, -6)]:
-        draw.text((x + dx, y + dy), text_upper, font=font, fill="black")
-    draw.text((x, y), text_upper, font=font, fill="#FFD700")
+    # Qora shadow (iOS uslubi — yumshoq ko'lanka)
+    shadow_offset = max(3, font_size // 18)
+    draw.text((x + shadow_offset, y + shadow_offset), text_upper,
+              font=font, fill=(0, 0, 0, 180))
+
+    # Qora outline (o'qilishni yaxshilaydi)
+    stroke = max(2, font_size // 25)
+    draw.text((x, y), text_upper, font=font,
+              fill="#FFFFFF", stroke_width=stroke, stroke_fill=(0, 0, 0))
 
     out = io.BytesIO()
     img.save(out, format="PNG")

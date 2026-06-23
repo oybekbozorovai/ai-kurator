@@ -107,12 +107,11 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, esports logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "A vibrant YouTube gaming banner, 2560x1440 pixels, 16:9 ratio. "
-            "A 3D sports car being transported on a flatbed truck along a country road "
-            "with green hills, potholes, dust and motion blur, bright blue sky. "
-            'Bold modern 3D text "{name}" in the center. '
-            "Cinematic lighting, colorful, ultra-sharp. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Photorealistic cinematic YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "A sports car being transported on a flatbed tow truck on a country road, "
+            "green hills, potholes, flying dust and motion blur, dramatic blue sky with clouds. "
+            "Hyperrealistic photography style, cinematic lighting, sharp detail, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "stickman": {
@@ -126,12 +125,11 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, playful esports logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "A dynamic YouTube gaming banner, 2560x1440 pixels, 16:9 ratio. "
-            "A 3D ragdoll stickman tumbling down stairs and ramps with comic impact effects, "
-            "motion blur, and energy bursts. Bright playful colors, dynamic background. "
-            'Bold modern 3D text "{name}" in the center. '
-            "Cinematic lighting, ultra-sharp. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Vibrant cinematic YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "A ragdoll stickman character mid-air tumbling with explosive comic impact effects, "
+            "motion blur trails, bright energy bursts, colorful dynamic background. "
+            "High-quality 3D render, dramatic cinematic lighting, ultra-sharp detail, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "wrongeyes": {
@@ -144,12 +142,11 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, modern logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "A quirky fun YouTube banner, 2560x1440 pixels, 16:9 ratio. "
-            "Big cartoon eyes looking in wrong directions with a playful comedic vibe, "
-            "colorful abstract background with energy shapes. "
-            'Bold modern 3D text "{name}" in the center. '
-            "Bright colors, high contrast, ultra-sharp. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Bold quirky YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "Giant cartoonish eyeballs with pupils pointing in wrong silly directions, "
+            "playful comedic atmosphere, colorful abstract geometric background with energy shapes. "
+            "Professional 3D render, high contrast vibrant colors, sharp detail, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "asmr_baby": {
@@ -162,12 +159,12 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, clean and adorable. 4K quality."
         ),
         "banner": (
-            "A soft calming YouTube ASMR banner, 2560x1440 pixels, 16:9 ratio. "
-            "Cute baby-themed elements with a glowing microphone and gentle sound waves, "
-            "soft toys and pastel bokeh lights. Pastel palette — pink, baby blue, cream. "
-            'Bold elegant text "{name}" in the center. '
-            "Soft dreamy lighting, cozy mood. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Soft dreamy YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "Cute baby nursery scene with a glowing ASMR microphone, gentle sound wave rings, "
+            "plush soft toys, pastel bokeh lights in background. "
+            "Pastel color palette — soft pink, baby blue, cream white. "
+            "Professional photography, soft studio lighting, cozy warm mood, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "asmr_chupa": {
@@ -180,12 +177,12 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, sweet and eye-catching. 4K quality."
         ),
         "banner": (
-            "A sweet vibrant YouTube ASMR banner, 2560x1440 pixels, 16:9 ratio. "
-            "Glossy swirl lollipops and candy with a microphone and gentle sound waves, "
-            "colorful soft bokeh background. Candy color palette — pink, red, yellow. "
-            'Bold elegant text "{name}" in the center. '
-            "Soft glossy lighting, sweet relaxing mood. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Sweet vibrant YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "Glossy colorful swirl lollipops and an ASMR microphone surrounded by soft sound wave rings, "
+            "candy-colored bokeh background with sparkles. "
+            "Candy color palette — pink, red, yellow swirls. "
+            "Photorealistic macro photography, glossy reflections, soft dreamy lighting, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "asmr_mms": {
@@ -198,12 +195,12 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, fun and eye-catching. 4K quality."
         ),
         "banner": (
-            "A vibrant YouTube ASMR banner, 2560x1440 pixels, 16:9 ratio. "
-            "Colorful glossy candy buttons and chocolates scattered with a microphone and gentle sound waves, "
-            "rainbow bokeh background. Bright candy colors. "
-            'Bold elegant text "{name}" in the center. '
-            "Soft glossy lighting, satisfying relaxing mood. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Vibrant satisfying YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "Colorful glossy M&M candy buttons and chocolates scattered artistically "
+            "with an ASMR microphone and gentle sound wave rings, rainbow bokeh background. "
+            "Photorealistic macro photography, bright candy colors, glossy reflections, "
+            "satisfying visual composition, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "roblox": {
@@ -216,12 +213,11 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, esports logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "A vibrant YouTube gaming banner, 2560x1440 pixels, 16:9 ratio. "
-            "Blocky 3D voxel characters and a colorful blocky world with energy effects and floating cubes. "
-            "Bright primary colors, dynamic background. "
-            'Bold modern 3D text "{name}" in the center. '
-            "Cinematic lighting, ultra-sharp. "
-            "Content centered within a safe area of 1546x423 pixels. 4K quality."
+            "Vibrant cinematic YouTube channel banner, 2560x1440 pixels, 16:9. "
+            "Colorful blocky 3D Roblox-style voxel characters in an adventure world, "
+            "floating cubes, glowing energy effects, bright primary colors on a dynamic background. "
+            "High-quality 3D render, cinematic dramatic lighting, ultra-sharp detail, no text, no watermark. "
+            "All subjects centered in the middle horizontal band of the image."
         ),
     },
     "custom": {

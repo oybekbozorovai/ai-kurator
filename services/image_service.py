@@ -117,29 +117,18 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
     cy = _SAFE_Y + _SAFE_H // 2
     y_start = cy - total_h // 2
 
-    # Matn kengligi bo'yicha qora shaffof fon
-    max_line_w = int(max(draw.textlength(ln, font=font) for ln in chosen_lines))
-    pad = int(font_size * 0.25)
-    bg_x0 = cx - max_line_w // 2 - pad
-    bg_y0 = y_start - pad
-    bg_x1 = cx + max_line_w // 2 + pad
-    bg_y1 = y_start + total_h + pad
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ov_draw = ImageDraw.Draw(overlay)
-    ov_draw.rounded_rectangle([bg_x0, bg_y0, bg_x1, bg_y1],
-                               radius=int(font_size * 0.15),
-                               fill=(0, 0, 0, 150))
-    img = img.convert("RGBA")
-    img = Image.alpha_composite(img, overlay)
-    img = img.convert("RGB")
-    draw = ImageDraw.Draw(img)
-
-    stroke = max(4, font_size // 18)
+    # Qalin qora outline + kuchli shadow — fonsiz ham har qanday rasmda o'qiladi
+    stroke = max(6, font_size // 14)
+    shadow_offset = max(5, font_size // 16)
 
     for i, line in enumerate(chosen_lines):
         lw = int(draw.textlength(line, font=font))
         x = cx - lw // 2
         y = y_start + i * line_height
+        # Shadow (biroz offset)
+        draw.text((x + shadow_offset, y + shadow_offset), line,
+                  font=font, fill=(0, 0, 0, 220))
+        # Asosiy oq matn qalin outline bilan
         draw.text((x, y), line, font=font,
                   fill="#FFFFFF", stroke_width=stroke, stroke_fill=(0, 0, 0))
 

@@ -120,15 +120,28 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
     cy = _SAFE_Y + _SAFE_H // 2
     y_start = cy - total_h // 2
 
-    shadow_offset = max(4, font_size // 15)
-    stroke = max(3, font_size // 20)
+    # Matn orqasiga qora shaffof fon — istalgan fonda o'qiladi
+    pad = int(font_size * 0.3)
+    bg_x0 = cx - max_w // 2 - pad
+    bg_y0 = y_start - pad
+    bg_x1 = cx + max_w // 2 + pad
+    bg_y1 = y_start + total_h + pad
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ov_draw = ImageDraw.Draw(overlay)
+    ov_draw.rounded_rectangle([bg_x0, bg_y0, bg_x1, bg_y1],
+                               radius=int(font_size * 0.2),
+                               fill=(0, 0, 0, 140))
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, overlay)
+    img = img.convert("RGB")
+    draw = ImageDraw.Draw(img)
+
+    stroke = max(3, font_size // 22)
 
     for i, line in enumerate(chosen_lines):
         lw = int(draw.textlength(line, font=font))
         x = cx - lw // 2
         y = y_start + i * line_height
-        draw.text((x + shadow_offset, y + shadow_offset), line,
-                  font=font, fill=(0, 0, 0, 200))
         draw.text((x, y), line, font=font,
                   fill="#FFFFFF", stroke_width=stroke, stroke_fill=(0, 0, 0))
 

@@ -107,12 +107,10 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, esports logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "Real DSLR photograph, NOT cartoon, NOT illustration, NOT vector art. "
-            "A real sports car loaded on a real flatbed tow truck driving on a real road, "
-            "green countryside, dust flying, dramatic sky with clouds, motion blur. "
-            "Ultra-realistic, RAW photography, 8K, cinematic depth of field, "
-            "sharp subject, bokeh background, professional lighting. "
-            "No text, no watermark. Wide 16:9 composition, subjects in center."
+            "photorealistic 8K RAW DSLR photo, sports car on flatbed tow truck, "
+            "country highway with green hills, flying dust, dramatic storm clouds, "
+            "golden hour sunlight, motion blur, cinematic wide shot, "
+            "shallow depth of field, sharp subject, no text, no watermark"
         ),
     },
     "stickman": {
@@ -126,11 +124,9 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, playful esports logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "High-quality 3D render, photorealistic, NOT flat art, NOT cartoon style. "
-            "A ragdoll character mid-air tumbling and crashing, explosive impact, "
-            "motion blur, bright energy bursts, dynamic colorful background. "
-            "Cinematic lighting, ultra-sharp, 8K render quality. "
-            "No text, no watermark. Wide 16:9, subjects in center."
+            "hyperrealistic 3D render 8K, ragdoll character flying through air after massive crash, "
+            "explosion sparks and debris, motion blur, bright energy particles, "
+            "dark dramatic background, cinematic lighting, no text, no watermark"
         ),
     },
     "wrongeyes": {
@@ -143,11 +139,10 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, modern logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "Professional 3D render, photorealistic style, NOT flat design. "
-            "Giant hyper-realistic eyeballs with pupils pointing in opposite silly directions, "
-            "surreal comedic atmosphere, vivid colorful abstract background. "
-            "Dramatic studio lighting, ultra-sharp, 8K render. "
-            "No text, no watermark. Wide 16:9, subjects in center."
+            "photorealistic 3D render 8K, two giant realistic human eyeballs floating in space, "
+            "pupils pointing in opposite silly directions, glossy texture, "
+            "vivid colorful abstract background with sparkles, dramatic studio lighting, "
+            "no text, no watermark"
         ),
     },
     "asmr_baby": {
@@ -160,12 +155,9 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, clean and adorable. 4K quality."
         ),
         "banner": (
-            "Real macro DSLR photograph, NOT illustration, NOT flat design. "
-            "A real ASMR microphone surrounded by real plush baby toys and soft pastel bokeh lights, "
-            "gentle sound wave rings, cozy nursery atmosphere. "
-            "Pastel palette — soft pink, baby blue, cream. "
-            "Ultra-realistic, 8K, soft studio lighting, shallow depth of field. "
-            "No text, no watermark. Wide 16:9, subjects in center."
+            "professional product photography 8K, ASMR microphone surrounded by soft plush baby toys, "
+            "pastel bokeh background, soft pink and baby blue tones, "
+            "shallow depth of field, warm cozy studio lighting, no text, no watermark"
         ),
     },
     "asmr_chupa": {
@@ -178,12 +170,9 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, sweet and eye-catching. 4K quality."
         ),
         "banner": (
-            "Real macro DSLR photograph, NOT illustration, NOT flat design. "
-            "Real glossy swirl lollipops and a real ASMR microphone, "
-            "candy-colored bokeh sparkles in background, sound wave rings. "
-            "Candy palette — vivid pink, red, yellow. "
-            "Ultra-realistic macro photography, glossy reflections, 8K, soft dreamy lighting. "
-            "No text, no watermark. Wide 16:9, subjects in center."
+            "macro photography 8K, glossy colorful swirl lollipops and ASMR microphone, "
+            "candy bokeh background with sparkles, vivid pink red yellow colors, "
+            "shallow depth of field, glossy reflections, studio lighting, no text, no watermark"
         ),
     },
     "asmr_mms": {
@@ -196,11 +185,9 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, fun and eye-catching. 4K quality."
         ),
         "banner": (
-            "Real macro DSLR photograph, NOT illustration, NOT flat design. "
-            "Real glossy M&M candies and chocolates scattered with a real ASMR microphone, "
-            "rainbow bokeh background, sound wave rings, satisfying layout. "
-            "Ultra-realistic macro photography, bright candy colors, glossy reflections, 8K. "
-            "No text, no watermark. Wide 16:9, subjects in center."
+            "macro photography 8K, colorful M&M candies scattered with ASMR microphone, "
+            "rainbow bokeh background, glossy candy reflections, "
+            "shallow depth of field, bright vivid colors, studio lighting, no text, no watermark"
         ),
     },
     "roblox": {
@@ -213,11 +200,9 @@ _NICHES: dict[str, dict] = {
             "Centered circular composition, esports logo style, sharp and eye-catching. 4K quality."
         ),
         "banner": (
-            "High-quality 3D render, photorealistic style, NOT flat art. "
-            "Colorful blocky voxel game characters in a vibrant adventure world, "
-            "floating cubes, glowing energy effects, bright primary colors, dynamic background. "
-            "Cinematic dramatic lighting, ultra-sharp, 8K render. "
-            "No text, no watermark. Wide 16:9, subjects in center."
+            "high quality 3D render 8K, colorful blocky voxel game characters in adventure world, "
+            "floating cubes, glowing particle effects, vivid primary colors, "
+            "cinematic dramatic lighting, ultra-sharp detail, no text, no watermark"
         ),
     },
     "custom": {
@@ -662,11 +647,11 @@ def _no_text_prompt(prompt: str) -> str:
 
 
 async def _generate_banner(prompt: str) -> bytes:
-    """Imagen 3 orqali banner yaratadi; xato bo'lsa Ideogramga fallback."""
+    """Flux Schnell (Replicate) orqali banner yaratadi; xato bo'lsa Ideogramga fallback."""
     try:
-        return await generate_banner_imagen(prompt)
+        return await generate_image(prompt, aspect_ratio="16:9")
     except Exception as e:
-        logger.warning("Imagen 3 xatosi, Ideogramga o'tilmoqda: %s", e)
+        logger.warning("Flux banner xatosi, Ideogramga o'tilmoqda: %s", e)
         return await generate_banner_image(prompt)
 
 
@@ -681,7 +666,8 @@ async def _generate_niche_image(niche_key: str, kind: str,
             prompt = await generate_image_prompt(channel_name, kind="avatar")
             return resize_image(await generate_image(prompt, aspect_ratio="1:1"), 1024, 1024)
         else:
-            bg = resize_image(await _generate_banner(channel_name), 2560, 1440)
+            prompt = await generate_image_prompt(channel_name, kind="banner")
+            bg = resize_image(await _generate_banner(prompt), 2560, 1440)
             return add_banner_text(bg, channel_name)
 
     template = niche[kind]

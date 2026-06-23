@@ -90,20 +90,17 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
 
     text_upper = text.upper()
 
-    # Gorizontal: 25% padding har ikki tomonda → text zone = 640px
-    pad_x = int(_SAFE_W * 0.25)
-    max_w = _SAFE_W - pad_x * 2   # 640px
-
-    # Vertikal: to'liq safe area balandligi (ko'p qator uchun padding yo'q)
+    # To'liq safe area kengligi — 260px shrift sig'ishi uchun padding yo'q
+    max_w = _SAFE_W               # 1280px
     max_h = _SAFE_H               # 350px
 
-    # Ko'p qatorli wrapping bilan eng katta mos shriftni toping
+    # 260px dan boshlab — mos kelguncha qisqartir (wrapping bilan)
     font_size = 24
     chosen_lines = [text_upper]
-    for fs in range(200, 23, -8):
+    for fs in range(260, 23, -8):
         fnt = _load_font(fs)
         lines = _wrap_text(draw, text_upper, fnt, max_w)
-        line_h = int(fs * 1.2)
+        line_h = int(fs * 1.15)
         total_h = line_h * len(lines)
         max_lw = max(draw.textlength(ln, font=fnt) for ln in lines)
         if max_lw <= max_w and total_h <= max_h:
@@ -112,7 +109,7 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
             break
 
     font = _load_font(font_size)
-    line_height = int(font_size * 1.2)
+    line_height = int(font_size * 1.15)
     total_h = line_height * len(chosen_lines)
 
     # Safe area markazi
@@ -120,23 +117,24 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
     cy = _SAFE_Y + _SAFE_H // 2
     y_start = cy - total_h // 2
 
-    # Matn orqasiga qora shaffof fon — istalgan fonda o'qiladi
-    pad = int(font_size * 0.3)
-    bg_x0 = cx - max_w // 2 - pad
+    # Matn kengligi bo'yicha qora shaffof fon
+    max_line_w = int(max(draw.textlength(ln, font=font) for ln in chosen_lines))
+    pad = int(font_size * 0.25)
+    bg_x0 = cx - max_line_w // 2 - pad
     bg_y0 = y_start - pad
-    bg_x1 = cx + max_w // 2 + pad
+    bg_x1 = cx + max_line_w // 2 + pad
     bg_y1 = y_start + total_h + pad
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ov_draw = ImageDraw.Draw(overlay)
     ov_draw.rounded_rectangle([bg_x0, bg_y0, bg_x1, bg_y1],
-                               radius=int(font_size * 0.2),
-                               fill=(0, 0, 0, 140))
+                               radius=int(font_size * 0.15),
+                               fill=(0, 0, 0, 150))
     img = img.convert("RGBA")
     img = Image.alpha_composite(img, overlay)
     img = img.convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    stroke = max(3, font_size // 22)
+    stroke = max(4, font_size // 18)
 
     for i, line in enumerate(chosen_lines):
         lw = int(draw.textlength(line, font=font))

@@ -79,9 +79,10 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
     """Banner rasmiga safe zone markaziga matn yozadi.
 
     Safe area: 1280x350 (x=640–1920, y=545–895) — barcha qurilmalarda ko'rinadi.
-    Matn zonasi: safe area ichida 25% padding (har tomondan).
-    Shrift: kanal nomi uzunligiga qarab avtomatik kichrayadi.
-    Uslub: iOS — oq matn, qora shadow, toza sans-serif.
+    Gorizontal: har ikki tomonda 25% padding → text zone = 640px.
+    Vertikal: to'liq safe area (350px) — katta shrift uchun.
+    Ko'p so'zli nomlar qatorlarga bo'linadi — shrift katta qoladi.
+    Uslub: iOS — oq matn, qora shadow + outline, toza sans-serif.
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = img.resize((_BANNER_W, _BANNER_H), Image.LANCZOS)
@@ -89,43 +90,47 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
 
     text_upper = text.upper()
 
-    # Matn zonasi: safe area ichida 25% padding
-    pad_x = int(_SAFE_W * 0.25)   # 320px har ikki tomonda
-    pad_y = int(_SAFE_H * 0.25)   # 87px yuqori va pastda
+    # Gorizontal: 25% padding har ikki tomonda → text zone = 640px
+    pad_x = int(_SAFE_W * 0.25)
     max_w = _SAFE_W - pad_x * 2   # 640px
-    max_h = _SAFE_H - pad_y * 2   # 176px
 
-    # Shriftni avtomatik kamaytirish — matn sig'maguncha
-    font_size = 220
-    font = _load_font(font_size)
-    while font_size >= 24:
-        font = _load_font(font_size)
-        bbox = draw.textbbox((0, 0), text_upper, font=font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        if tw <= max_w and th <= max_h:
+    # Vertikal: to'liq safe area balandligi (ko'p qator uchun padding yo'q)
+    max_h = _SAFE_H               # 350px
+
+    # Ko'p qatorli wrapping bilan eng katta mos shriftni toping
+    font_size = 24
+    chosen_lines = [text_upper]
+    for fs in range(200, 23, -8):
+        fnt = _load_font(fs)
+        lines = _wrap_text(draw, text_upper, fnt, max_w)
+        line_h = int(fs * 1.2)
+        total_h = line_h * len(lines)
+        max_lw = max(draw.textlength(ln, font=fnt) for ln in lines)
+        if max_lw <= max_w and total_h <= max_h:
+            font_size = fs
+            chosen_lines = lines
             break
-        font_size -= 6
 
-    bbox = draw.textbbox((0, 0), text_upper, font=font)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
+    font = _load_font(font_size)
+    line_height = int(font_size * 1.2)
+    total_h = line_height * len(chosen_lines)
 
-    # Safe area markazi: x=1280, y=720
+    # Safe area markazi
     cx = _SAFE_X + _SAFE_W // 2
     cy = _SAFE_Y + _SAFE_H // 2
-    x = cx - tw // 2
-    y = cy - th // 2
+    y_start = cy - total_h // 2
 
-    # Qora shadow (iOS uslubi — yumshoq ko'lanka)
-    shadow_offset = max(3, font_size // 18)
-    draw.text((x + shadow_offset, y + shadow_offset), text_upper,
-              font=font, fill=(0, 0, 0, 180))
+    shadow_offset = max(4, font_size // 15)
+    stroke = max(3, font_size // 20)
 
-    # Qora outline (o'qilishni yaxshilaydi)
-    stroke = max(2, font_size // 25)
-    draw.text((x, y), text_upper, font=font,
-              fill="#FFFFFF", stroke_width=stroke, stroke_fill=(0, 0, 0))
+    for i, line in enumerate(chosen_lines):
+        lw = int(draw.textlength(line, font=font))
+        x = cx - lw // 2
+        y = y_start + i * line_height
+        draw.text((x + shadow_offset, y + shadow_offset), line,
+                  font=font, fill=(0, 0, 0, 200))
+        draw.text((x, y), line, font=font,
+                  fill="#FFFFFF", stroke_width=stroke, stroke_fill=(0, 0, 0))
 
     out = io.BytesIO()
     img.save(out, format="PNG")

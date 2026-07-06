@@ -8,16 +8,38 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
-# Shrift qidiriladigan joylar — iOS uslubiga yaqin zamonaviy sans-serif
+# Shrift qidiriladigan joylar — birinchisi repo ichida (assets/font.ttf),
+# shuning uchun Railway/Linux'da ham har doim topiladi. Qolganlari — zaxira.
 _FONT_PATHS = [
-    os.path.join(os.path.dirname(__file__), "..", "assets", "font.ttf"),
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",  # Railway/Ubuntu
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",          # Linux fallback
-    "/System/Library/Fonts/HelveticaNeue.ttc",                       # macOS (iOS uslubi)
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",             # macOS fallback
-    "/Library/Fonts/Arial Bold.ttf",
-    "C:\\Windows\\Fonts\\arialbd.ttf",
+    os.path.join(os.path.dirname(__file__), "..", "assets", "font.ttf"),  # repo (DejaVu Bold)
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",          # Linux
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",  # Ubuntu
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",             # macOS
+    "/System/Library/Fonts/HelveticaNeue.ttc",                       # macOS zaxira
+    "C:\\Windows\\Fonts\\arialbd.ttf",                               # Windows
 ]
+
+
+def _resolve_font_file() -> str:
+    """Mavjud birinchi TTF/TTC shrift faylini bir marta aniqlaydi (modul yuklanganda)."""
+    for path in _FONT_PATHS:
+        if os.path.exists(path):
+            try:
+                ImageFont.truetype(path, 40)  # o'qib bo'lishini tekshiramiz
+                logger.info("Banner/thumbnail shrifti: %s", path)
+                return path
+            except OSError:
+                continue
+    logger.error(
+        "TTF shrift TOPILMADI! assets/font.ttf yo'q va tizim shriftlari ham yo'q. "
+        "Banner/thumbnail matni buzilishi mumkin."
+    )
+    return ""
+
+
+# Bir marta aniqlanadi — har chizishda diskdan qidirilmaydi
+_FONT_FILE = _resolve_font_file()
+_FONT_CACHE = {}
 
 # YouTube banner safe area konstantalar (2560x1440)
 _BANNER_W, _BANNER_H = 2560, 1440
@@ -33,16 +55,22 @@ _COLORS = {
 }
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    """Mavjud shriftni yuklaydi. Topilmasa standart shriftga qaytadi."""
-    for path in _FONT_PATHS:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except OSError:
-                continue
-    logger.warning("TTF shrift topilmadi — standart shrift ishlatiladi.")
-    return ImageFont.load_default()
+def _load_font(size: int):
+    """Aniqlangan TTF shriftni berilgan o'lchamda yuklaydi (keshlangan).
+    Shrift umuman topilmagan bo'lsa (juda kam holat) standart shriftni qaytaradi."""
+    size = max(8, int(size))
+    if not _FONT_FILE:
+        return ImageFont.load_default()
+    cached = _FONT_CACHE.get(size)
+    if cached is None:
+        cached = ImageFont.truetype(_FONT_FILE, size)
+        _FONT_CACHE[size] = cached
+    return cached
+
+
+def _font_is_scalable() -> bool:
+    """TTF shrift mavjudmi (o'lcham o'zgartirsa bo'ladimi)? Buzilgan chizishdan saqlaydi."""
+    return bool(_FONT_FILE)
 
 
 def _wrap_text(draw: ImageDraw.ImageDraw, text: str,
@@ -121,8 +149,9 @@ def add_banner_text(image_bytes: bytes, text: str) -> bytes:
     cy = _SAFE_Y + _SAFE_H // 2
     y_start = cy - total_h // 2
 
-    stroke = max(6, font_size // 14)
-    shadow_offset = max(5, font_size // 16)
+    # Stroke/soya — haqiqiy o'lchangan balandlikka nisbatan (nomutanosib bo'lmaydi)
+    stroke = max(3, line_h_px // 14)
+    shadow_offset = max(3, line_h_px // 16)
 
     for i, line in enumerate(chosen_lines):
         lw = int(draw.textlength(line, font=font))

@@ -32,6 +32,22 @@ _lock = Lock()
 # Supabase'da admin hisoblangan rollar (is_admin shu rollarni ham qabul qiladi)
 ADMIN_ROLES = {"owner", "admin"}
 
+# --- Auth keshi ---
+# Har xabarda Supabase'ga 2 ta sinxron HTTP so'rov bormasligi uchun natijalarni
+# qisqa muddat keshlaymiz. Bu event loop bloklanishini 30-60 barobar kamaytiradi.
+# Yozuv operatsiyalari (approve/ban/unban/kick/free/admin) keshni tozalaydi.
+from cachetools import TTLCache  # noqa: E402
+
+_AUTH_TTL = 30  # soniya
+_approved_cache: TTLCache = TTLCache(maxsize=10000, ttl=_AUTH_TTL)
+_admin_cache: TTLCache = TTLCache(maxsize=2000, ttl=_AUTH_TTL)
+
+
+def _invalidate_auth(telegram_id: int) -> None:
+    """Foydalanuvchi ruxsati o'zgarganda keshni tozalaydi (darhol kuchga kirsin)."""
+    _approved_cache.pop(telegram_id, None)
+    _admin_cache.pop(telegram_id, None)
+
 
 # ============================================================
 # Lokal bot holati (faqat shu bot uchun — Supabase'da emas)
@@ -67,6 +83,11 @@ def _init_db() -> None:
                 disabled_at INTEGER NOT NULL
             );
         """)
+        # Migratsiya: qaysi muddat uchun ogohlantirilganini saqlaymiz.
+        # Patok uzaytirilsa (exp o'zgarsa) — qayta ogohlantiriladi.
+        cols = [r[1] for r in c.execute("PRAGMA table_info(expiry_warned)").fetchall()]
+        if "warned_exp" not in cols:
+            c.execute("ALTER TABLE expiry_warned ADD COLUMN warned_exp INTEGER NOT NULL DEFAULT 0")
 
 
 _init_db()
@@ -228,10 +249,13 @@ def approve_user(telegram_id: int, phone: str, first_name: str = "", username: s
     except sb.SupabaseError:
         pass
 
-    # Lokal ban/ogohlantirishni tozalaymiz
+    # Ogohlantirish belgisini tozalaymiz (uzaytirilsa qayta ogohlantirilsin).
+    # DIQQAT: banni bu yerda TOZALAMAYMIZ — aks holda banlangan o'quvchi
+    # raqamini qayta yozib o'zini ban'dan chiqarib olardi. Ban faqat
+    # admin /unban_user orqali olib tashlanadi.
     with _lock, sqlite3.connect(DB_PATH) as c:
-        c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
         c.execute("DELETE FROM expiry_warned WHERE telegram_id = ?", (telegram_id,))
+    _invalidate_auth(telegram_id)  # yangi ruxsat darhol kuchga kirsin
     return True
 
 
@@ -250,6 +274,11 @@ def _is_banned(telegram_id: int) -> bool:
         ).fetchone() is not None
 
 
+def is_banned(telegram_id: int) -> bool:
+    """Ochiq API — o'quvchi banlanganmi (ro'yxatdan o'tishni bloklash uchun)."""
+    return _is_banned(telegram_id)
+
+
 def _user_row(telegram_id: int) -> Optional[dict]:
     rows = sb.select(
         "users",
@@ -260,8 +289,7 @@ def _user_row(telegram_id: int) -> Optional[dict]:
     return rows[0] if rows else None
 
 
-def is_user_approved(telegram_id: int) -> bool:
-    """Ro'yxatdan o'tgan (phone bor), banlanmagan, patok faol va muddati o'tmagan."""
+def _compute_is_user_approved(telegram_id: int) -> bool:
     if _is_banned(telegram_id):
         return False
     row = _user_row(telegram_id)
@@ -276,6 +304,17 @@ def is_user_approved(telegram_id: int) -> bool:
     if not active:
         return False
     return exp == 0 or _now() < exp
+
+
+def is_user_approved(telegram_id: int) -> bool:
+    """Ro'yxatdan o'tgan (phone bor), banlanmagan, patok faol va muddati o'tmagan.
+    Natija ~30s keshlanadi (Supabase yukini kamaytirish uchun)."""
+    cached = _approved_cache.get(telegram_id)
+    if cached is not None:
+        return cached
+    result = _compute_is_user_approved(telegram_id)
+    _approved_cache[telegram_id] = result
+    return result
 
 
 def get_user_info(telegram_id: int) -> Optional[Dict]:
@@ -321,6 +360,8 @@ def free_phone(phone: str) -> List[int]:
         )
     except sb.SupabaseError:
         pass
+    for tid in ids:
+        _invalidate_auth(tid)
     return ids
 
 
@@ -404,29 +445,35 @@ def get_expiring_soon(days: int = 7) -> List[Tuple]:
 
 
 def get_users_to_warn(days: int = 3) -> List[Tuple]:
-    """Muddati `days` kun ichida tugaydigan, lekin hali ogohlantirilmaganlar."""
+    """Muddati `days` kun ichida tugaydigan, shu muddat uchun hali ogohlantirilmaganlar.
+    Patok uzaytirilsa (exp o'zgarsa) — qayta ogohlantiriladi."""
     now = _now()
     deadline = now + days * 24 * 3600
     with _lock, sqlite3.connect(DB_PATH) as c:
-        warned = {r[0] for r in c.execute("SELECT telegram_id FROM expiry_warned").fetchall()}
+        warned = {
+            r[0]: r[1]
+            for r in c.execute("SELECT telegram_id, warned_exp FROM expiry_warned").fetchall()
+        }
     out: List[Tuple] = []
     for r in _registered_users():
         tid = int(r["telegram_id"])
-        if tid in warned or (r.get("role") or "").lower() in ADMIN_ROLES:
+        if (r.get("role") or "").lower() in ADMIN_ROLES:
             continue
         if r.get("cohort_id") is None:
             continue
         exp, _active = _cohort_expiry(r.get("cohort"))
-        if now < exp < deadline:
+        if now < exp < deadline and warned.get(tid) != exp:
             out.append((tid, _strip_plus(r.get("phone")), r.get("first_name"), exp))
     return out
 
 
-def mark_warned(telegram_id: int) -> None:
+def mark_warned(telegram_id: int, warned_exp: int = 0) -> None:
+    """Foydalanuvchini shu muddat (warned_exp) uchun ogohlantirilgan deb belgilaydi."""
     with _lock, sqlite3.connect(DB_PATH) as c:
         c.execute(
-            "INSERT OR IGNORE INTO expiry_warned (telegram_id, warned_at) VALUES (?, ?)",
-            (telegram_id, _now()),
+            "INSERT OR REPLACE INTO expiry_warned (telegram_id, warned_at, warned_exp) "
+            "VALUES (?, ?, ?)",
+            (telegram_id, _now(), warned_exp),
         )
 
 
@@ -445,6 +492,7 @@ def mark_user_kicked(telegram_id: int, reason: str = "expired") -> None:
         )
     except sb.SupabaseError as e:
         logger.error("mark_user_kicked xato: %s", e)
+    _invalidate_auth(telegram_id)
 
 
 # ============================================================
@@ -461,11 +509,13 @@ def ban_user(telegram_id: int) -> None:
         )
     except sb.SupabaseError as e:
         logger.error("ban_user xato: %s", e)
+    _invalidate_auth(telegram_id)
 
 
 def unban_user(telegram_id: int) -> None:
     with _lock, sqlite3.connect(DB_PATH) as c:
         c.execute("DELETE FROM banned_users WHERE telegram_id = ?", (telegram_id,))
+    _invalidate_auth(telegram_id)
 
 
 # ============================================================
@@ -512,7 +562,9 @@ def add_assistant_admin(telegram_id: int) -> bool:
         cur = c.execute(
             "INSERT OR IGNORE INTO assistant_admins (telegram_id) VALUES (?)", (telegram_id,)
         )
-        return cur.rowcount > 0
+        added = cur.rowcount > 0
+    _invalidate_auth(telegram_id)
+    return added
 
 
 def remove_assistant_admin(telegram_id: int) -> bool:
@@ -520,7 +572,9 @@ def remove_assistant_admin(telegram_id: int) -> bool:
         cur = c.execute(
             "DELETE FROM assistant_admins WHERE telegram_id = ?", (telegram_id,)
         )
-        return cur.rowcount > 0
+        removed = cur.rowcount > 0
+    _invalidate_auth(telegram_id)
+    return removed
 
 
 def is_assistant_admin(telegram_id: int) -> bool:
@@ -547,12 +601,16 @@ def _has_admin_role(telegram_id: int) -> bool:
 
 
 def is_admin(telegram_id: int) -> bool:
-    """Asosiy admin (ADMIN_USER_IDS), Supabase owner/admin roli yoki lokal yordamchi admin."""
+    """Asosiy admin (ADMIN_USER_IDS), Supabase owner/admin roli yoki lokal yordamchi admin.
+    Natija ~30s keshlanadi."""
     if telegram_id in ADMIN_USER_IDS:
         return True
-    if is_assistant_admin(telegram_id):
-        return True
-    return _has_admin_role(telegram_id)
+    cached = _admin_cache.get(telegram_id)
+    if cached is not None:
+        return cached
+    result = is_assistant_admin(telegram_id) or _has_admin_role(telegram_id)
+    _admin_cache[telegram_id] = result
+    return result
 
 
 # ============================================================

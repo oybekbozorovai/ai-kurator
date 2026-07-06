@@ -253,35 +253,87 @@ async def _send_text_result(message: Message, text: str) -> None:
         )
 
 
-def _seo_copyable_html(name: str, titles: list, description: str, tags: list) -> str:
-    """Video SEO natijasi — nom/opisaniye/teglar alohida HTML bloklar ichida.
-    Telegram'da har blokni bosganda matn nusxalanadi. parse_mode='HTML' bilan yuboriladi."""
-    parts = [f"🎬 {html.escape(name)}\n"]
+_SEO_BLOCK_LIMIT = 3800  # bitta xabar chegarasi (4096'dan xavfsiz pastda)
 
+
+def _split_raw(text: str, limit: int) -> list:
+    """Matnni chegaradan oshmaydigan bo'laklarga bo'ladi (qator, keyin belgi bo'yicha).
+    Escape'dan OLDIN bo'linadi — HTML entity (&amp;) ikkiga bo'linib qolmasin."""
+    out = []
+    cur = ""
+    for line in text.split("\n"):
+        if cur and len(cur) + len(line) + 1 > limit:
+            out.append(cur)
+            cur = line
+        else:
+            cur = f"{cur}\n{line}" if cur else line
+    if cur:
+        out.append(cur)
+    final = []
+    for chunk in out:
+        while len(chunk) > limit:
+            final.append(chunk[:limit])
+            chunk = chunk[limit:]
+        if chunk:
+            final.append(chunk)
+    return final or [""]
+
+
+def _seo_blocks(name: str, titles: list, description: str, tags: list) -> list:
+    """Video SEO natijasini nusxalanadigan HTML bloklar RO'YXATI qilib qaytaradi.
+    Har blok alohida xabar — hech biri 4096 chegaradan oshmaydi, tag ichida bo'linmaydi."""
+    blocks = []
+
+    head = [f"🎬 {html.escape(name)}\n"]
     titles = titles or []
     if titles:
-        if len(titles) == 1:
-            parts.append("📌 Video nomi (bosib nusxalang):")
-        else:
-            parts.append("📌 Video nomi variantlari (har birini bosib nusxalang):")
+        head.append(
+            "📌 Video nomi (bosib nusxalang):" if len(titles) == 1
+            else "📌 Video nomi variantlari (har birini bosib nusxalang):"
+        )
         for t in titles:
-            parts.append(f"<code>{html.escape(str(t))}</code>")
+            head.append(f"<code>{html.escape(str(t))}</code>")
+    blocks.append("\n".join(head))
 
     if description:
-        parts.append("\n📝 Opisaniye (bosib nusxalang):")
-        parts.append(f"<pre>{html.escape(str(description))}</pre>")
+        chunks = _split_raw(str(description), _SEO_BLOCK_LIMIT - 60)
+        for i, chunk in enumerate(chunks):
+            label = "📝 Opisaniye (bosib nusxalang):" if i == 0 else "📝 Opisaniye (davomi):"
+            blocks.append(f"{label}\n<pre>{html.escape(chunk)}</pre>")
 
     if tags:
-        parts.append("\n🏷 Teglar (bosib nusxalang):")
         tag_str = ", ".join(str(t) for t in tags)
-        parts.append(f"<pre>{html.escape(tag_str)}</pre>")
+        for i, chunk in enumerate(_split_raw(tag_str, _SEO_BLOCK_LIMIT - 60)):
+            label = "🏷 Teglar (bosib nusxalang):" if i == 0 else "🏷 Teglar (davomi):"
+            blocks.append(f"{label}\n<pre>{html.escape(chunk)}</pre>")
 
-    return "\n".join(parts) + GUIDE["video_seo"]
+    # Qo'llanmani oxirgi blokka qo'shamiz (agar sig'sa)
+    if blocks and len(blocks[-1]) + len(GUIDE["video_seo"]) < _SEO_BLOCK_LIMIT:
+        blocks[-1] += GUIDE["video_seo"]
+    else:
+        blocks.append(GUIDE["video_seo"].strip())
+    return blocks
 
 
-async def _send_seo_html(message: Message, text: str) -> None:
-    """Nusxalanadigan SEO natijasini HTML rejimda yuboradi, 🏠 tugma bilan."""
-    await message.answer(text, parse_mode="HTML", reply_markup=home_kb())
+async def _send_seo_html(message: Message, blocks: list) -> None:
+    """Nusxalanadigan SEO bloklarini ketma-ket yuboradi; oxirgisiga 🏠 tugma."""
+    for i, block in enumerate(blocks):
+        last = i == len(blocks) - 1
+        try:
+            await message.answer(
+                block, parse_mode="HTML",
+                reply_markup=home_kb() if last else None,
+            )
+        except Exception:
+            logger.exception("SEO blok yuborilmadi (uzunlik=%d)", len(block))
+            # HTML muammosi bo'lsa — oddiy matn sifatida urinib ko'ramiz
+            plain = block.replace("<code>", "").replace("</code>", "") \
+                         .replace("<pre>", "").replace("</pre>", "")
+            import html as _h
+            plain = _h.unescape(plain)
+            await message.answer(
+                plain, reply_markup=home_kb() if last else None
+            )
 
 
 async def _deny_limit(callback: CallbackQuery, kind: str) -> None:
@@ -292,6 +344,27 @@ async def _deny_limit(callback: CallbackQuery, kind: str) -> None:
         f"Bugungi limit tugadi (kuniga {limit} ta {word}). Ertaga urinib ko'ring.",
         show_alert=True,
     )
+
+
+async def _gate_generation(message: Message, state: FSMContext, kind: str) -> bool:
+    """Generatsiya oldidan haqiqiy tekshiruv (matn/rasm bosqichida).
+    Eski tugma yoki muddat o'tgan/banlangan foydalanuvchi suiiste'molini to'xtatadi.
+    Xato bo'lsa holatni tozalab, sababni yozadi va False qaytaradi."""
+    if not _is_allowed(message.from_user.id):
+        await state.clear()
+        await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting yoki ruxsatingizni tekshiring.")
+        return False
+    ok, _ = _check_limit(message.from_user.id, kind)
+    if not ok:
+        await state.clear()
+        limit = DAILY_IMAGE_LIMIT if kind == "image" else DAILY_TEXT_LIMIT
+        word = "rasm" if kind == "image" else "SEO"
+        await message.answer(
+            f"Bugungi limit tugadi (kuniga {limit} ta {word}). Ertaga urinib ko'ring.",
+            reply_markup=home_kb(),
+        )
+        return False
+    return True
 
 
 # ============================================================
@@ -523,11 +596,11 @@ async def video_preset(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.delete()
     except Exception:
         pass
-    html_result = _seo_copyable_html(
+    blocks = _seo_blocks(
         preset["name"], preset.get("titles", []),
         preset.get("description", ""), preset.get("tags", []),
     )
-    await _send_seo_html(callback.message, html_result)
+    await _send_seo_html(callback.message, blocks)
 
 
 @router.callback_query(F.data == "vseo:custom")
@@ -579,8 +652,8 @@ async def video_process(message: Message, state: FSMContext) -> None:
                    label=topic, result_type="text", result_text=plain)
     await state.clear()
     await waiting.delete()
-    html_result = _seo_copyable_html(topic, titles, description, tags)
-    await _send_seo_html(message, html_result)
+    blocks = _seo_blocks(topic, titles, description, tags)
+    await _send_seo_html(message, blocks)
 
 
 # ============================================================
@@ -606,6 +679,13 @@ async def avatar_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("niche:"))
 async def niche_select(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    ok, _ = _check_limit(callback.from_user.id, "image")
+    if not ok:
+        await _deny_limit(callback, "image")
+        return
     _, kind, niche_key = callback.data.split(":", 2)
     niche = _NICHES.get(niche_key)
     if not niche:
@@ -684,9 +764,12 @@ async def _generate_niche_image(niche_key: str, kind: str,
 
 @router.message(YT.avatar_name, F.text & ~F.text.startswith("/"))
 async def avatar_name_process(message: Message, state: FSMContext) -> None:
+    if not await _gate_generation(message, state, "image"):
+        return
     data = await state.get_data()
     niche_key = data.get("niche_key", "custom")
     channel_name = message.text.strip()
+    await state.clear()  # ikki marta yubormaslik uchun holatni darhol tozalaymiz
     waiting = await message.answer("🎨 Avatar chizilmoqda... (30-60 soniya)")
     try:
         image = await _generate_niche_image(niche_key, "avatar", channel_name)
@@ -730,9 +813,12 @@ async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(YT.banner_name, F.text & ~F.text.startswith("/"))
 async def banner_name_process(message: Message, state: FSMContext) -> None:
+    if not await _gate_generation(message, state, "image"):
+        return
     data = await state.get_data()
     niche_key = data.get("niche_key", "custom")
     channel_name = message.text.strip()
+    await state.clear()  # ikki marta yubormaslik uchun holatni darhol tozalaymiz
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
         image = await _generate_niche_image(niche_key, "banner", channel_name)

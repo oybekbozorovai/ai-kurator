@@ -27,6 +27,7 @@ from services.auth import (
     enable_reminders,
     get_phone_owner,
     is_admin,
+    is_banned,
     is_phone_allowed,
     is_user_approved,
     normalize_phone,
@@ -83,6 +84,11 @@ ALREADY_USED_TEXT = (
     "Agar bu sizning raqamingiz bo'lsa-yu, kira olmayotgan bo'lsangiz — ustozga murojaat qiling."
 )
 
+BANNED_TEXT = (
+    "🚫 Sizning hisobingiz bloklangan.\n\n"
+    "Agar bu xato deb hisoblasangiz, qabul bo'limiga murojaat qiling."
+)
+
 ROADMAP_TEXT = (
     "🗺 Kurs yo'l xaritasi\n\n"
     "1️⃣ Modullarni tartib bilan ko'ring (1-moduldan boshlang)\n"
@@ -127,7 +133,13 @@ async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) 
 
 
 async def _process_phone(message: Message, state: FSMContext, raw_phone: str) -> None:
-    """Raqamni tekshiradi: ruxsat ro'yxatida bormi + boshqa akkount band qilmaganmi."""
+    """Raqamni tekshiradi: banlanmaganmi + ruxsat ro'yxatida bormi + band qilinmaganmi."""
+    # Banlangan o'quvchi qayta ro'yxatdan o'tib banni chetlab o'tolmaydi
+    if is_banned(message.from_user.id):
+        await message.answer(BANNED_TEXT)
+        logger.info("Banlangan foydalanuvchi urindi: id=%s", message.from_user.id)
+        return
+
     phone = normalize_phone(raw_phone)
 
     if not is_phone_allowed(phone):

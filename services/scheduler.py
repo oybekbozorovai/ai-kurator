@@ -12,6 +12,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import CERT_PROMPT_DAYS, KICK_CHAT_IDS
+from handlers.utils import safe_send
 from services.auth import (
     get_expired_users,
     get_setting,
@@ -78,21 +79,19 @@ async def kick_expired_loop(bot: Bot) -> None:
 
 
 async def warn_expiring_soon(bot: Bot) -> int:
-    """Muddati yaqinlashganlarni (default 3 kun) bir marta ogohlantiradi."""
+    """Muddati yaqinlashganlarni (default 3 kun) ogohlantiradi.
+    Faqat MUVAFFAQIYATLI yuborilганda belgilaydi — vaqtinchalik xatoda keyingi soatda qayta uradi."""
     users = get_users_to_warn(WARN_BEFORE_DAYS)
     if not users:
         return 0
     warned = 0
     for telegram_id, phone, first_name, expires_at in users:
         days_left = max(1, round((expires_at - time.time()) / 86400))
-        try:
-            await bot.send_message(telegram_id, WARN_MESSAGE.format(days=days_left))
+        ok = await safe_send(bot, telegram_id, WARN_MESSAGE.format(days=days_left))
+        if ok:
+            mark_warned(telegram_id, expires_at)  # shu muddat uchun belgilaymiz
             warned += 1
-        except (TelegramBadRequest, TelegramForbiddenError):
-            pass  # bloklagan bo'lishi mumkin — normal
-        except Exception as e:
-            logger.warning("Ogohlantirish yuborib bo'lmadi (user=%s): %s", telegram_id, e)
-        mark_warned(telegram_id)  # qayta ogohlantirmaslik uchun
+        # ok=False (vaqtinchalik xato) → belgilamaymiz, keyingi soatda qayta urinadi
         await asyncio.sleep(0.1)
     logger.info("Muddat ogohlantirishi yuborildi: %d ta", warned)
     return warned

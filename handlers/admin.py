@@ -8,7 +8,11 @@ from datetime import datetime
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramRetryAfter,
+)
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -36,7 +40,12 @@ from services.auth import (
 )
 from services.scheduler import kick_expired_once
 from services import usage
-from services.broadcast_store import delete_messages, get_messages, list_broadcasts, save_message
+from services.broadcast_store import (
+    delete_messages,
+    get_messages,
+    list_broadcasts,
+    save_messages_bulk,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -498,23 +507,36 @@ async def broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -
         return
     await callback.message.edit_text("📤 Yuborilmoqda...")
 
-    # broadcast_type: sana + vaqt (masalan "2026-06-23T14:30")
-    broadcast_type = datetime.utcnow().strftime("broadcast_%Y-%m-%dT%H:%M")
+    # broadcast_type: sekundgacha aniqlik (bir daqiqada 2 broadcast to'qnashmasin)
+    broadcast_type = datetime.utcnow().strftime("broadcast_%Y-%m-%dT%H:%M:%S")
 
-    ids = list_all_user_ids()
+    ids = await asyncio.to_thread(list_all_user_ids)
     sent = 0
     failed = 0
+    saved = []  # (uid, message_id) — oxirida bitta so'rovda saqlaymiz
     for uid in ids:
-        try:
-            msg = await bot.send_message(uid, text)
-            save_message(uid, msg.message_id, broadcast_type)
+        msg = None
+        for attempt in range(2):
+            try:
+                msg = await bot.send_message(uid, text)
+                break
+            except TelegramRetryAfter as e:  # 429 flood — kutib qayta uramiz
+                await asyncio.sleep(getattr(e, "retry_after", 3) + 1)
+                continue
+            except (TelegramBadRequest, TelegramForbiddenError):
+                break  # bloklagan/o'chgan — o'tkazib yuboramiz
+            except Exception as e:
+                logger.warning("E'lon yuborilmadi (user=%s): %s", uid, e)
+                break
+        if msg is not None:
+            saved.append((uid, msg.message_id))
             sent += 1
-        except (TelegramBadRequest, TelegramForbiddenError):
+        else:
             failed += 1
-        except Exception as e:
-            failed += 1
-            logger.warning("E'lon yuborilmadi (user=%s): %s", uid, e)
         await asyncio.sleep(0.05)
+
+    # Barcha message_id larni BITTA so'rovda saqlaymiz (event loop bloklanmasin)
+    await asyncio.to_thread(save_messages_bulk, saved, broadcast_type)
 
     await callback.message.answer(
         f"✅ E'lon yuborildi: {sent} ta\n"

@@ -21,6 +21,23 @@ def save_message(telegram_id: int, message_id: int, broadcast_type: str) -> None
         logger.warning("broadcast_messages saqlashda xato: %s", e)
 
 
+def save_messages_bulk(rows: list, broadcast_type: str) -> None:
+    """Bir nechta yuborilgan xabarni BITTA so'rovda saqlaydi (event loop bloklamasin).
+    rows: [(telegram_id, message_id), ...]"""
+    if not rows:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    payload = [
+        {"telegram_id": tid, "message_id": mid,
+         "broadcast_type": broadcast_type, "sent_at": now}
+        for tid, mid in rows
+    ]
+    try:
+        insert(TABLE, payload)
+    except Exception as e:
+        logger.warning("broadcast_messages ommaviy saqlashda xato: %s", e)
+
+
 def get_messages(broadcast_type: str) -> list[dict]:
     """broadcast_type bo'yicha barcha saqlangan xabarlarni qaytaradi."""
     try:

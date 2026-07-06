@@ -253,15 +253,7 @@ async def qa_answer(message: Message) -> None:
     """Savol-javob rejimida har bir matnli xabarga javob beradi."""
     user_id = message.from_user.id
 
-    allowed, _ = check_rate_limit(user_id)
-    if not allowed:
-        await message.answer(
-            "⏳ Soatiga ruxsat etilgan savollar limitini to'ldirgansiz. "
-            "Iltimos, biroz keyin urinib ko'ring.",
-            reply_markup=home_kb(),
-        )
-        return
-
+    # Kesh urishi limitni yemasligi uchun avval keshni tekshiramiz
     cached = get_cached_answer(message.text)
     if cached:
         logger.info("Keshdan javob: user=%s", user_id)
@@ -272,10 +264,27 @@ async def qa_answer(message: Message) -> None:
             )
         return
 
+    allowed, _ = check_rate_limit(user_id)
+    if not allowed:
+        await message.answer(
+            "⏳ Soatiga ruxsat etilgan savollar limitini to'ldirgansiz. "
+            "Iltimos, biroz keyin urinib ko'ring.",
+            reply_markup=home_kb(),
+        )
+        return
+
     await message.bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
-    hits = await retrieve(message.text)
-    context = format_context(hits)
-    answer = await ask_tutor(message.text, context, telegram_id=user_id)
+    try:
+        hits = await retrieve(message.text)
+        context = format_context(hits)
+        answer = await ask_tutor(message.text, context, telegram_id=user_id)
+    except Exception:
+        logger.exception("Savol-javob xatosi")
+        await message.answer(
+            "😔 Kechirasiz, hozir javob berib bo'lmadi. Biroz kuting va qayta urinib ko'ring.",
+            reply_markup=home_kb(),
+        )
+        return
 
     if not answer.startswith("⚠️"):
         cache_answer(message.text, answer)

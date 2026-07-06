@@ -40,13 +40,23 @@ def _is_addressed_to_bot(message: Message, bot_username: str) -> Tuple[bool, str
     mention = f"@{bot_username}"
     if mention.lower() in text.lower():
         cleaned = text.replace(mention, "").replace(mention.lower(), "").strip()
-        return True, cleaned
+        return True, _strip_command(cleaned)
 
     for cmd in ("/savol", "/ask"):
         if text.startswith(cmd):
             return True, text[len(cmd):].strip()
 
     return False, ""
+
+
+def _strip_command(text: str) -> str:
+    """Matn boshidagi /savol yoki /ask ni olib tashlaydi —
+    savol vektoriga buyruq so'zi qo'shilib ketmasin."""
+    t = text.strip()
+    for cmd in ("/savol", "/ask"):
+        if t.lower().startswith(cmd):
+            return t[len(cmd):].lstrip("@ ").strip()
+    return t
 
 
 @router.message(F.text | F.caption)
@@ -71,11 +81,7 @@ async def handle_group_message(message: Message) -> None:
         )
         return
 
-    allowed, _ = check_rate_limit(user_id)
-    if not allowed:
-        await message.reply("⏳ Limitni to'ldirgansiz, biroz keyin urinib ko'ring.")
-        return
-
+    # Kesh urishi limitni yemasligi uchun avval keshni tekshiramiz
     cached = get_cached_answer(question)
     if cached:
         parts = split_for_telegram(cached)
@@ -84,10 +90,22 @@ async def handle_group_message(message: Message) -> None:
             await message.answer(p)
         return
 
+    allowed, _ = check_rate_limit(user_id)
+    if not allowed:
+        await message.reply("⏳ Limitni to'ldirgansiz, biroz keyin urinib ko'ring.")
+        return
+
     await message.bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
-    hits = await retrieve(question)
-    context = format_context(hits)
-    answer = await ask_tutor(question, context)
+    try:
+        hits = await retrieve(question)
+        context = format_context(hits)
+        answer = await ask_tutor(question, context)
+    except Exception:
+        logger.exception("Guruh savol-javob xatosi")
+        await message.reply(
+            "😔 Kechirasiz, hozir javob berib bo'lmadi. Biroz kuting va qayta urinib ko'ring."
+        )
+        return
 
     if not answer.startswith("⚠️"):
         cache_answer(question, answer)

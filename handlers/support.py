@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from keyboards import home_kb
-from services.auth import _user_row
+from services.auth import _user_row, is_admin, is_user_approved
 from services.support_store import create_ticket
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,12 @@ async def support_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Command("yordam"))
 async def support_cmd(message: Message, state: FSMContext) -> None:
+    # Faqat ro'yxatdan o'tgan o'quvchi/admin — aks holda ro'yxatdan o'tish buzilardi
+    # (registratsiya paytida /yordam yozsa, keyingi telefon raqami ticketga tushib qolardi).
+    uid = message.from_user.id
+    if not (is_admin(uid) or is_user_approved(uid)):
+        await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting.")
+        return
     await _enter(message, state)
 
 

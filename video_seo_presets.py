@@ -143,22 +143,19 @@ VIDEO_SEO_PRESETS = {
         "name": "ASMR MMS",
         "titles": [
             "4 Minutes Satisfying with Unpacking Bright Tins with Radiant Skittles and Sweet M&M'S Candy ASMR",
-            "Satisfying ASMR Unboxing: Bright Tins, Skittles & Sweet M&M's Candy!",
-            "Unpacking Colorful Candy Tins: Skittles & M&M's ASMR 🍬"
         ],
         "description": (
             "4 Minutes Satisfying with Unpacking Bright Tins with Radiant Skittles and Sweet M&M'S Candy ASMR 🍬✨\n\n"
             "Watch the most satisfying unboxing of bright colorful tins filled with Skittles and M&M's candy! "
-            "Perfect ASMR relaxation video with crinkling sounds, tapping, and candy sorting. Dive into a world of "
-            "sweet sounds and vibrant colors that will instantly relax you.\n\n"
-            "Thank you for watching! Please like, share, and subscribe for more sweet ASMR content ❤️\n\n"
+            "Perfect ASMR relaxation video with crinkling sounds, tapping, and candy sorting.\n\n"
+            "Thank you for watching, please like, share and subscribe\n\n"
             "#asmr #unboxing #sweet #mms #candy #satisfying #skittles #asmrcandy #oddlysatisfying"
         ),
         "tags": [
-            "asmr", "unboxing", "sweet", "mms", "candy", "satisfying asmr", "skittles", 
-            "asmr candy", "oddly satisfying", "asmr unboxing", "candy unboxing", 
+            "asmr", "unboxing", "sweet", "mms", "candy", "satisfying", "skittles",
+            "asmr candy", "oddly satisfying", "asmr unboxing", "candy unboxing",
             "relaxing sounds", "crunchy sounds", "m&ms candy", "colorful candy",
-            "satisfying video", "candy sorting"
+            "satisfying video", "candy sorting",
         ],
     },
     "n7": {

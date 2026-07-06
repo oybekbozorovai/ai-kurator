@@ -18,6 +18,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ai_kurator")
 
+# Fon vazifalariga kuchli havola — aks holda GC ularni to'xtatib qo'yishi mumkin
+_background_tasks: set = set()
+
+
+def _spawn(coro) -> None:
+    """Fon vazifasini ishga tushiradi va havolasini saqlaydi (GC'dan himoya)."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 async def main() -> None:
     bot = Bot(
@@ -38,11 +48,11 @@ async def main() -> None:
     logger.info("Bot ishga tushdi: @%s (id=%s)", me.username, me.id)
 
     # Muddati o'tgan talabalarni avtomat chiqarish — har soatda
-    asyncio.create_task(kick_expired_loop(bot))
+    _spawn(kick_expired_loop(bot))
     logger.info("Auto-kick scheduler ishga tushirildi")
 
-# Texnik yordam javoblarini o'quvchilarga yetkazish — har 1 daqiqada
-    asyncio.create_task(support_notifier_loop(bot))
+    # Texnik yordam javoblarini o'quvchilarga yetkazish — har 1 daqiqada
+    _spawn(support_notifier_loop(bot))
     logger.info("Texnik yordam notifier ishga tushirildi")
 
     await bot.delete_webhook(drop_pending_updates=True)

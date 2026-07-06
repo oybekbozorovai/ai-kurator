@@ -47,10 +47,11 @@ DAILY_REMINDER_MESSAGE = (
 
 EXPIRY_MESSAGE = (
     "📢 Salom!\n\n"
-    "Sizning kursdagi {months} oylik ruxsat muddatingiz tugadi. "
+    "Sizning kursdagi ruxsat muddatingiz tugadi. "
     "Shu sababli sizni kurs guruhi va kanalidan chiqarildik.\n\n"
-    "Agar kursni davom ettirmoqchi bo'lsangiz yoki yangi patokga yozilmoqchi bo'lsangiz, "
-    "ustozga murojaat qiling."
+    "Botda qolish va kursni davom ettirmoqchi bo'lsangiz, yana 3 oylik ruxsatni "
+    "sotib olishingiz mumkin (💰 490 000 so'm).\n"
+    "Ma'lumot uchun qabul bo'limiga murojaat qiling."
 )
 
 WARN_MESSAGE = (
@@ -257,15 +258,5 @@ async def _kick_from_all_chats(bot: Bot, user_id: int, first_name: str) -> bool:
 
 
 async def _notify_user(bot: Bot, telegram_id: int) -> None:
-    """Talabaga shaxsiy chatda muddat tugagani haqida xabar yuboradi."""
-    from config import COURSE_ACCESS_MONTHS
-    try:
-        await bot.send_message(
-            telegram_id,
-            EXPIRY_MESSAGE.format(months=COURSE_ACCESS_MONTHS),
-        )
-    except (TelegramBadRequest, TelegramForbiddenError):
-        # Talaba botni bloklagan bo'lishi mumkin — bu normal
-        pass
-    except Exception as e:
-        logger.warning("Notification yuborib bo'lmadi (user=%s): %s", telegram_id, e)
+    """Talabaga shaxsiy chatda muddat tugagani haqida xabar yuboradi (429 ishlanadi)."""
+    await safe_send(bot, telegram_id, EXPIRY_MESSAGE)

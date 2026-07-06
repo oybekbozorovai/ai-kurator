@@ -105,8 +105,12 @@ def normalize_phone(phone: str) -> str:
     if not digits:
         return ""
     n = len(digits)
-    if n == 9 and digits[0] == "9":
+    # 9 xonali — O'zbekiston milliy raqami (operator kodi 90/91/93/94/95/97/98/99/33/77/88 ...)
+    if n == 9:
         return "+998" + digits
+    # 0 bilan boshlangan 10 xonali (masalan 0901234567) — 0 ni olib tashlaymiz
+    if n == 10 and digits[0] == "0":
+        return "+998" + digits[1:]
     if n == 12 and digits.startswith("998"):
         return "+" + digits
     if n == 13 and digits.startswith("9998"):  # ikki marta 9 yozib yuborilgan
@@ -415,14 +419,16 @@ def list_all_user_ids() -> List[int]:
 # ============================================================
 
 def get_expired_users() -> List[Tuple]:
-    """Patok muddati o'tgan ro'yxatdan o'tgan foydalanuvchilar."""
+    """Chiqarilishi kerak bo'lganlar: patok muddati o'tgan YOKI patok o'chirilgan (is_active=false).
+    is_user_approved ham shu ikkalasida kirishni rad etadi — moslik uchun ikkalasini chiqaramiz."""
     now = _now()
     out: List[Tuple] = []
     for r in _registered_users():
         if (r.get("role") or "").lower() in ADMIN_ROLES or r.get("cohort_id") is None:
             continue
-        exp, _active = _cohort_expiry(r.get("cohort"))
-        if exp > 0 and exp < now:
+        exp, active = _cohort_expiry(r.get("cohort"))
+        expired = exp > 0 and exp < now
+        if expired or not active:
             out.append((int(r["telegram_id"]), _strip_plus(r.get("phone")),
                         r.get("first_name"), exp))
     return out

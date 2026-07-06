@@ -12,6 +12,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ChatAction
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
@@ -222,7 +223,7 @@ def _niche_kb(kind: str) -> "InlineKeyboardMarkup":
             text=niche["label"],
             callback_data=f"niche:{kind}:{key}",
         )])
-    buttons.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="menu:home")])
+    buttons.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -399,8 +400,7 @@ GUIDE_TEXT = (
     "🌅 Thumbnail yaratish — video uchun cover rasm. Mavzu yozasiz yoki namuna rasm "
     "yuborasiz.\n\n"
     "📂 Mening ishlarim — ilgari yaratgan ishlaringiz tarixi.\n\n"
-    "🛠 Texnik yordam — bot, mini-app yoki login ishlamasa, muammoni shu yerga yozing "
-    "(skrinshot bilan).\n\n"
+    "🛠 Texnik nosozlik (bot/mini-app/login ishlamasa) — /yordam buyrug'ini yozing.\n\n"
     "Qaytish uchun 🏠 Bosh menyu tugmasini bosing."
 )
 
@@ -590,7 +590,8 @@ async def video_preset(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
     plain = format_preset(preset) + GUIDE["video_seo"]  # tarix uchun toza matn
-    log_generation(callback.from_user.id, "video_seo", "text",
+    # kind="preset" — tarixda qoladi, lekin kunlik "text" limitini yemaydi (AI ishlatilmaydi)
+    log_generation(callback.from_user.id, "video_seo", "preset",
                    label=preset["name"], result_type="text", result_text=plain)
     try:
         await callback.message.delete()
@@ -958,6 +959,7 @@ async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
             image = add_text_to_thumbnail(image, overlay, position, color)
     except Exception:
         logger.exception("Thumbnail yaratish xatosi")
+        await state.clear()  # xatoda holatni tozalaymiz (foydalanuvchi tuzoqda qolmasin)
         await callback.message.edit_text(ERROR_TEXT, reply_markup=home_kb())
         return
 
@@ -1009,6 +1011,9 @@ async def history_show(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("hist:"))
 async def history_open(callback: CallbackQuery) -> None:
     """Tarixdagi bitta ishni qayta yuboradi."""
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
     item_id = int(callback.data.split(":")[-1])
     item = get_item(item_id)
     await callback.answer()
@@ -1025,3 +1030,30 @@ async def history_open(callback: CallbackQuery) -> None:
         )
     else:
         await _send_text_result(callback.message, result_text or "(bo'sh)")
+
+
+# ============================================================
+# Holat tuzoqlaridan saqlash — noto'g'ri kirish turida bot jim qolmasin
+# (Bu handlerlar oxirida — faqat yuqoridagi aniq handlerlar ishlamasa fire bo'ladi)
+# ============================================================
+
+@router.message(StateFilter(
+    YT.channel, YT.video, YT.channel_analysis,
+    YT.avatar_name, YT.banner_name, YT.thumb_topic, YT.thumb_text,
+))
+async def _yt_expect_text(message: Message) -> None:
+    """Matn kutilgan bosqichda rasm/stiker yuborilsa — jim qolmasdan yo'naltiradi."""
+    await message.answer(
+        "✍️ Iltimos, so'ralgan ma'lumotni MATN ko'rinishida yozing.\n"
+        "Bekor qilish uchun 🏠 Bosh menyu tugmasini bosing.",
+        reply_markup=home_kb(),
+    )
+
+
+@router.message(StateFilter(YT.thumb_position, YT.thumb_color))
+async def _yt_expect_button(message: Message) -> None:
+    """Tugma kutilgan bosqichda matn yozilsa — holatni saqlab, tugmani eslatadi."""
+    await message.answer(
+        "👆 Iltimos, yuqoridagi tugmalardan birini bosing "
+        "(yoki 🏠 Bosh menyu bilan bekor qiling)."
+    )

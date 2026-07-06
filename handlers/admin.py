@@ -106,14 +106,13 @@ async def cmd_admin_help(message: Message) -> None:
 
 @router.message(Command("myid"))
 async def cmd_myid(message: Message) -> None:
-    """Har kim ishlatadi — o'z ID'sini va admin holatini ko'rsatadi (diagnostika)."""
+    """Har kim ishlatadi — faqat O'ZINING ID'sini va admin holatini ko'rsatadi.
+    (Boshqa adminlar ro'yxati ko'rsatilmaydi — /list_admins faqat adminlar uchun.)"""
     uid = message.from_user.id
-    admin_status = "HA ✅" if uid in ADMIN_USER_IDS else "YO'Q ❌"
-    admins = ", ".join(str(x) for x in sorted(ADMIN_USER_IDS)) or "(bo'sh)"
+    admin_status = "HA ✅" if _is_admin(uid) else "YO'Q ❌"
     await message.answer(
         f"🆔 Sizning Telegram ID: {uid}\n"
-        f"👑 Admin: {admin_status}\n"
-        f"📋 Botdagi adminlar ro'yxati: {admins}"
+        f"👑 Admin: {admin_status}"
     )
 
 
@@ -266,19 +265,18 @@ async def cmd_free_phone(message: Message) -> None:
     if len(parts) < 2:
         await message.answer("Ishlatish: /free_phone +998901234567")
         return
-    freed = free_phone(parts[1])
+    freed = await asyncio.to_thread(free_phone, parts[1])
     if freed:
         ids = ", ".join(str(i) for i in freed)
         await message.answer(
             f"✅ Raqam bo'shatildi: {parts[1]}\n"
-            f"O'chirilgan akkount(lar): {ids}\n\n"
+            f"Uzilgan akkount(lar): {ids}\n\n"
             f"Endi bu raqam bilan boshqa Telegram akkaunti qayta ro'yxatdan o'ta oladi.\n"
-            f"(Raqam ruxsat ro'yxatida qoldi — to'liq o'chirish uchun /remove_phone.)"
+            f"(Raqamni butunlay o'chirish — admin dashboardidagi «Kontaktlar» bo'limida.)"
         )
     else:
         await message.answer(
-            f"ℹ️ Bu raqam bilan hech kim ro'yxatdan o'tmagan: {parts[1]}\n"
-            f"(Ruxsat ro'yxatidan butunlay o'chirish uchun /remove_phone ishlating.)"
+            f"ℹ️ Bu raqam bilan hech kim ro'yxatdan o'tmagan: {parts[1]}"
         )
 
 

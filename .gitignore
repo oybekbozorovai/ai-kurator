@@ -8,6 +8,7 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+*.code-workspace
 
 # Foydalanuvchilar bazasi (Railway volume orqali persistent saqlanadi)
 data/*.db

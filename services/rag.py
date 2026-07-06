@@ -240,14 +240,22 @@ def get_store() -> VectorStore:
     return _store
 
 
+# Mavzudan tashqari savol uchun minimal cosine o'xshashligi. Bundan past bo'lsa —
+# tegishli material yo'q deb hisoblanadi (tutor rad etadi). Kurs materialidagi
+# haqiqiy savollar odatda 0.6+ beradi; ob-havo/siyosat kabilar past bo'ladi.
+MIN_SIMILARITY = 0.45
+
+
 def _extract_module_lesson(query: str) -> Tuple[Optional[str], Optional[str]]:
-    """Savol matnidan 'X-modul Y-dars' ni ajratadi (agar bor bo'lsa)."""
+    """Savol matnidan 'X-modul Y-dars' ni ajratadi (aniq tire bilan yozilsa).
+    'N-modul'/'N-dars' shakli talab qilinadi — 'men 3 dars ko'rdim' kabi tasodifiy
+    iboralar noto'g'ri filtrlashni keltirib chiqarmasin."""
     module = None
     lesson = None
-    m = re.search(r"(\d+)[-_\s]*[-_\s]?\s*modul", query, re.IGNORECASE)
+    m = re.search(r"(\d+)\s*-\s*modul", query, re.IGNORECASE)
     if m:
         module = str(int(m.group(1)))
-    m = re.search(r"(\d+)[-_\s]*[-_\s]?\s*dars", query, re.IGNORECASE)
+    m = re.search(r"(\d+)\s*-\s*dars", query, re.IGNORECASE)
     if m:
         lesson = str(int(m.group(1)))
     return module, lesson
@@ -255,17 +263,19 @@ def _extract_module_lesson(query: str) -> Tuple[Optional[str], Optional[str]]:
 
 async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
     """Savol uchun eng yaqin bo'laklarni topadi.
-    Agar savolda 'X-modul Y-dars' aniq ko'rsatilsa, shu darsdan bo'laklar ustun beriladi."""
-    store = get_store()
+    Agar savolda 'X-modul Y-dars' aniq ko'rsatilsa, shu darsdan bo'laklar ustun beriladi.
+    Mavzuga aloqasiz savollarda (past o'xshashlik) bo'sh qaytaradi — tutor rad etadi."""
+    # 34MB indexni birinchi marta yuklashni thread'ga o'tkazamiz (event loop bloklanmasin)
+    store = await asyncio.to_thread(get_store)
     if not store.chunks:
         return []
 
     qmodule, qlesson = _extract_module_lesson(query)
     qvec = await embed_query(query)
 
-    # Agar aniq modul/dars so'ralsa, avval shu joydan qidiramiz
+    # Agar aniq modul/dars so'ralsa, shu darsdan bo'laklarni beramiz (foydalanuvchi
+    # aniq shu darsni so'radi — bu yerda chegara qo'llamaymiz).
     if qmodule and qlesson:
-        # Filter chunks by module+lesson
         matching_idx = [
             i for i, c in enumerate(store.chunks)
             if c.get("module") == qmodule and c.get("lesson") == qlesson
@@ -276,11 +286,15 @@ async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
             norms = np.where(norms == 0, 1e-9, norms)
             scores = (sub_matrix @ qvec) / norms
             top_local = np.argsort(-scores)[:k]
-            results = [(store.chunks[matching_idx[i]], float(scores[i])) for i in top_local]
-            return results
+            return [(store.chunks[matching_idx[i]], float(scores[i])) for i in top_local]
 
-    # Aks holda — oddiy embedding qidiruv
-    return store.search(qvec, k=k)
+    # Umumiy qidiruv — mavzuga aloqasiz bo'laklarni chegara bilan kesamiz
+    hits = store.search(qvec, k=k)
+    relevant = [(c, s) for c, s in hits if s >= MIN_SIMILARITY]
+    if hits and not relevant:
+        logger.info("Mavzudan tashqari savol (eng yuqori moslik %.2f): %s",
+                    hits[0][1], query[:60])
+    return relevant
 
 
 def format_context(hits: List[Tuple[Dict, float]]) -> str:

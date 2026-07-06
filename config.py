@@ -43,17 +43,16 @@ SUPABASE_SERVICE_ROLE_KEY = _clean(os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
 # Qo'shtirnoq, probel, vergul yoki nuqta-vergul — qanday yozilsa ham ID'larni ajratadi
 ADMIN_USER_IDS = {int(x) for x in re.findall(r"\d+", os.getenv("ADMIN_USER_IDS", ""))}
 
-_group_id = os.getenv("COURSE_GROUP_ID", "").strip()
-COURSE_GROUP_ID = int(_group_id) if _group_id.lstrip("-").isdigit() else None
+# Guruh/kanal ID'lari — qo'shtirnoq/probel bo'lsa ham to'g'ri o'qiladi.
+# ID manfiy bo'lishi mumkin (masalan -1001234567890), shuning uchun -? bilan.
+_group_ids = re.findall(r"-?\d+", os.getenv("COURSE_GROUP_ID", ""))
+COURSE_GROUP_ID = int(_group_ids[0]) if _group_ids else None
 
 # Standart kurs ruxsat muddati (oylarda)
 COURSE_ACCESS_MONTHS = int(os.getenv("COURSE_ACCESS_MONTHS", "4"))
 
 # Muddat tugaganda talabani chiqarib yuborish kerak bo'lgan chatlar (vergul bilan)
-KICK_CHAT_IDS = [
-    int(x.strip()) for x in os.getenv("KICK_CHAT_IDS", "").split(",")
-    if x.strip().lstrip("-").isdigit()
-]
+KICK_CHAT_IDS = [int(x) for x in re.findall(r"-?\d+", os.getenv("KICK_CHAT_IDS", ""))]
 
 # --- YouTube xizmatlari: Replicate (rasm) + kunlik limitlar ---
 REPLICATE_API_TOKEN = _clean(os.getenv("REPLICATE_API_TOKEN", ""))

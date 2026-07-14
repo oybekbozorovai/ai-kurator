@@ -8,6 +8,7 @@ from services.auth import (
     ADMIN_ROLES,
     DB_PATH,
     _cohort_expiry,
+    _date_to_ts,
     _lock,
     _now,
     _registered_users,
@@ -118,6 +119,16 @@ def cert_window_open(cohort, days: int = 10) -> bool:
         return False
     # Tugashga `days` kun yoki kamroq qolgandan boshlab (tugagach kirish yopiladi)
     return _now() >= exp - days * 24 * 3600
+
+
+def is_grandfathered(row: dict, before_iso: str) -> bool:
+    """Foydalanuvchi `before_iso` sanasidan OLDIN botga qo'shilgan bo'lsa — eski o'quvchi,
+    sertifikatni darhol oladi (patok/muddatdan qat'i nazar)."""
+    if not before_iso or not row:
+        return False
+    cutoff = _date_to_ts(before_iso)
+    created = _date_to_ts(row.get("created_at"))
+    return cutoff > 0 and created > 0 and created < cutoff
 
 
 def get_users_for_certificate(days: int = 10) -> List[Tuple]:

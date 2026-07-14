@@ -7,13 +7,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from config import CERT_PROMPT_DAYS, COURSE_NAME
+from config import CERT_GRANDFATHER_BEFORE, CERT_PROMPT_DAYS, COURSE_NAME
 from services.auth import _user_row, is_admin, is_user_approved
 from services.certificate import clean_name, generate_cert_id, render_certificate
 from services.cert_store import (
     cert_window_open,
     get_certificate,
     has_certificate,
+    is_grandfathered,
     save_certificate,
 )
 
@@ -37,24 +38,35 @@ async def _begin_cert(callback: CallbackQuery, state: FSMContext, check_window: 
     """Sertifikat oqimini boshlaydi. check_window=True bo'lsa, muddat oynasini tekshiradi
     (menyu tugmasi uchun); scheduler tugmasi allaqachon tekshirilgan."""
     uid = callback.from_user.id
-    if not (is_admin(uid) or is_user_approved(uid)):
+    admin = is_admin(uid)
+    if not (admin or is_user_approved(uid)):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
 
-    row = _user_row(uid)
-    cohort_id = row.get("cohort_id") if row else None
-    if not cohort_id:
-        await callback.answer("Patok ma'lumoti topilmadi.", show_alert=True)
-        return
+    row = _user_row(uid) or {}
+    cohort_id = row.get("cohort_id")
+    is_test = False
 
-    # Menyu tugmasi: faqat kurs tugashiga 10 kun qolganda ochiladi (adminlarga har doim)
-    if check_window and not is_admin(uid) and not cert_window_open(row.get("cohort"), CERT_PROMPT_DAYS):
-        await callback.answer()
-        await callback.message.answer(NOT_OPEN_TEXT.format(days=CERT_PROMPT_DAYS))
-        return
+    if admin:
+        # Adminlar sinash uchun har doim ola oladi (patok/muddat shart emas)
+        cohort_id = str(cohort_id) if cohort_id else "admin-test"
+        is_test = True
+    elif is_grandfathered(row, CERT_GRANDFATHER_BEFORE):
+        # Eski o'quvchi — patok/muddatdan qat'i nazar darhol oladi
+        cohort_id = str(cohort_id) if cohort_id else "early"
+    else:
+        # Oddiy o'quvchi — patok kerak + oxirgi 10 kun oynasi
+        if not cohort_id:
+            await callback.answer("Patok ma'lumoti topilmadi.", show_alert=True)
+            return
+        if check_window and not cert_window_open(row.get("cohort"), CERT_PROMPT_DAYS):
+            await callback.answer()
+            await callback.message.answer(NOT_OPEN_TEXT.format(days=CERT_PROMPT_DAYS))
+            return
+        cohort_id = str(cohort_id)
 
     await state.set_state(CertStates.waiting_name)
-    await state.update_data(cohort_id=str(cohort_id))
+    await state.update_data(cohort_id=cohort_id, is_test=is_test)
     await callback.message.answer(
         "Sertifikatingizga yoziladigan to'liq Ism Familiyangizni yuboring:"
     )
@@ -78,6 +90,7 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
     uid = message.from_user.id
     data = await state.get_data()
     cohort_id = data.get("cohort_id")
+    is_test = data.get("is_test", False)
     if not cohort_id:
         await state.clear()
         await message.answer("Xatolik yuz berdi. Iltimos, qayta /start bosing.")
@@ -92,7 +105,8 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
         )
         return
 
-    if has_certificate(uid, cohort_id):
+    # Admin sinovida takror tekshiruv o'tkazib yuboriladi (qayta chizib ko'rish mumkin)
+    if not is_test and has_certificate(uid, cohort_id):
         await state.clear()
         existing = get_certificate(uid, cohort_id)
         if existing:
@@ -110,13 +124,15 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
         return
 
     file = BufferedInputFile(png_bytes, filename=f"certificate_{cert_id}.png")
-    await message.answer_photo(
-        file,
-        caption=f"Tabriklaymiz, {full_name}!\nSertifikat ID: {cert_id}",
-    )
-    save_certificate(cert_id, uid, full_name, cohort_id, COURSE_NAME)
+    caption = f"Tabriklaymiz, {full_name}!\nSertifikat ID: {cert_id}"
+    if is_test:
+        caption = "🧪 (Admin sinovi)\n" + caption
+    await message.answer_photo(file, caption=caption)
+    if not is_test:  # admin sinovini bazaga yozmaymiz
+        save_certificate(cert_id, uid, full_name, cohort_id, COURSE_NAME)
     await state.clear()
-    logger.info("Sertifikat berildi: user=%s cert=%s name=%s", uid, cert_id, full_name)
+    logger.info("Sertifikat berildi: user=%s cert=%s name=%s test=%s",
+                uid, cert_id, full_name, is_test)
 
 
 @router.message(CertStates.waiting_name)

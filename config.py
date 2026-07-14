@@ -77,6 +77,9 @@ YT_DB_PATH = BASE_DIR / "data" / "yt.db"
 CERT_VERIFY_BASE_URL = _clean(os.getenv("CERT_VERIFY_BASE_URL", "https://youtubeai.uz/sert/"))
 CERT_PROMPT_DAYS = int(os.getenv("CERT_PROMPT_DAYS", "10"))
 COURSE_NAME = _clean(os.getenv("COURSE_NAME", "YouTube AI"))
+# Bu sanadan OLDIN botga qo'shilgan eski o'quvchilar sertifikatni darhol oladi
+# (patok/muddatdan qat'i nazar). Keyingilar oddiy 90-kun → oxirgi 10 kun qoidasi bo'yicha.
+CERT_GRANDFATHER_BEFORE = _clean(os.getenv("CERT_GRANDFATHER_BEFORE", "2026-06-20"))
 CERT_TEMPLATE = BASE_DIR / "assets" / "certificate_template.png"
 CERT_FONT = BASE_DIR / "assets" / "fonts" / "AlexBrush-Regular.ttf"
 

@@ -110,6 +110,16 @@ def save_certificate(
 # Sertifikat olishga haqli foydalanuvchilar
 # ============================================================
 
+def cert_window_open(cohort, days: int = 10) -> bool:
+    """Sertifikat tugmasi ochilganmi — patok tugashiga `days` kun yoki undan kam qolgan.
+    Muddat belgilanmagan patoklar uchun False."""
+    exp, _active = _cohort_expiry(cohort)
+    if exp == 0:
+        return False
+    # Tugashga `days` kun yoki kamroq qolgandan boshlab (tugagach kirish yopiladi)
+    return _now() >= exp - days * 24 * 3600
+
+
 def get_users_for_certificate(days: int = 10) -> List[Tuple]:
     """Muddat yaqinlashgan (days kun), sertifikat olmagan, hali taklif qilinmagan.
 

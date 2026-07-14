@@ -7,10 +7,15 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from config import COURSE_NAME
+from config import CERT_PROMPT_DAYS, COURSE_NAME
 from services.auth import _user_row, is_admin, is_user_approved
 from services.certificate import clean_name, generate_cert_id, render_certificate
-from services.cert_store import get_certificate, has_certificate, save_certificate
+from services.cert_store import (
+    cert_window_open,
+    get_certificate,
+    has_certificate,
+    save_certificate,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="certificate")
@@ -21,8 +26,16 @@ class CertStates(StatesGroup):
     waiting_name = State()
 
 
-@router.callback_query(F.data == "cert:start")
-async def cert_start(callback: CallbackQuery, state: FSMContext) -> None:
+NOT_OPEN_TEXT = (
+    "🏆 Sertifikat hali ochilmagan.\n\n"
+    "Sertifikat kurs tugashiga {days} kun qolganda ochiladi. "
+    "Shu vaqt kelganda bu tugma orqali sertifikatingizni olishingiz mumkin."
+)
+
+
+async def _begin_cert(callback: CallbackQuery, state: FSMContext, check_window: bool) -> None:
+    """Sertifikat oqimini boshlaydi. check_window=True bo'lsa, muddat oynasini tekshiradi
+    (menyu tugmasi uchun); scheduler tugmasi allaqachon tekshirilgan."""
     uid = callback.from_user.id
     if not (is_admin(uid) or is_user_approved(uid)):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
@@ -34,12 +47,30 @@ async def cert_start(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Patok ma'lumoti topilmadi.", show_alert=True)
         return
 
+    # Menyu tugmasi: faqat kurs tugashiga 10 kun qolganda ochiladi (adminlarga har doim)
+    if check_window and not is_admin(uid) and not cert_window_open(row.get("cohort"), CERT_PROMPT_DAYS):
+        await callback.answer()
+        await callback.message.answer(NOT_OPEN_TEXT.format(days=CERT_PROMPT_DAYS))
+        return
+
     await state.set_state(CertStates.waiting_name)
     await state.update_data(cohort_id=str(cohort_id))
     await callback.message.answer(
         "Sertifikatingizga yoziladigan to'liq Ism Familiyangizni yuboring:"
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "cert:start")
+async def cert_start(callback: CallbackQuery, state: FSMContext) -> None:
+    """Scheduler yuborgan taklif tugmasi — muddat allaqachon tekshirilgan."""
+    await _begin_cert(callback, state, check_window=False)
+
+
+@router.callback_query(F.data == "menu:cert")
+async def cert_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    """Bosh menyudagi 'Sertifikat olish' tugmasi — muddat oynasini tekshiradi."""
+    await _begin_cert(callback, state, check_window=True)
 
 
 @router.message(CertStates.waiting_name, F.text & ~F.text.startswith("/"))

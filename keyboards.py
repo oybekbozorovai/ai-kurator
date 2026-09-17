@@ -26,8 +26,6 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔍 Raqobatchi kanallar analizi", callback_data="menu:channel_analysis")],
         [InlineKeyboardButton(text="🎬 Video nomlari, tavsifi, teglari", callback_data="menu:video_seo")],
         [InlineKeyboardButton(text="🌅 Video ustiga rasm yaratish", callback_data="menu:thumbnail")],
-        [InlineKeyboardButton(text="🖼 Avatar yaratish", callback_data="menu:avatar")],
-        [InlineKeyboardButton(text="🎨 Banner yaratish", callback_data="menu:banner")],
         [InlineKeyboardButton(text="🏆 Sertifikat olish", callback_data="menu:cert")],
         [InlineKeyboardButton(text="📂 Mening ishlarim", callback_data="menu:history")],
         [InlineKeyboardButton(text="ℹ️ Botdan foydalanish", callback_data="menu:guide")],

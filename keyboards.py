@@ -53,15 +53,6 @@ def video_seo_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def thumb_skip_kb() -> InlineKeyboardMarkup:
-    """Matn qadami — yozish yoki matnsiz davom etish."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Matnsiz davom etish",
-                              callback_data="thumb:notext")],
-        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
-    ])
-
-
 def thumb_position_kb() -> InlineKeyboardMarkup:
     """Thumbnail matni joylashuvi."""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -108,4 +99,16 @@ def thumb_download_again_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Yana bir video", callback_data="menu:thumb_download")],
         [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
+    ])
+
+
+def thumb_result_kb() -> InlineKeyboardMarkup:
+    """Thumbnail natijasi ostida: ko'rsatma bilan o'zgartirish, aniq matn, yangi rasm, bosh menyu."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ O'zgartirish (ko'rsatma yozaman)", callback_data="thumb:edit")],
+        [InlineKeyboardButton(text="🔤 Ustiga aniq matn yozish", callback_data="thumb:addtext")],
+        [
+            InlineKeyboardButton(text="🔄 Yangi rasm", callback_data="menu:thumbnail"),
+            InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home"),
+        ],
     ])

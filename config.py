@@ -62,6 +62,10 @@ FLUX_REDUX_MODEL = "black-forest-labs/flux-redux-schnell"
 FLUX_DEV_MODEL = "black-forest-labs/flux-dev"
 # Banner uchun (kompozitsiya sifati yuqori)
 IDEOGRAM_MODEL = "ideogram-ai/ideogram-v2-turbo"
+# Video oblojkasi (thumbnail): prompt'dan yaratish va tayyor rasmni ko'rsatma bilan tahrirlash.
+# Google Nano Banana (Gemini 2.5 Flash Image) — Replicate orqali (Gemini kaliti bepul tarifda,
+# rasm modellari uchun kvota 0; Replicate'da esa to'lov bor).
+NANO_BANANA_MODEL = _clean(os.getenv("THUMB_MODEL", "google/nano-banana"))
 
 # Har bir o'quvchiga KUNLIK limit (adminlarga ta'sir qilmaydi)
 DAILY_IMAGE_LIMIT = int(os.getenv("DAILY_IMAGE_LIMIT", "5"))

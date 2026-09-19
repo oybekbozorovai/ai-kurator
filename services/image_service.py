@@ -103,6 +103,26 @@ def resize_image(image_bytes: bytes, width: int, height: int) -> bytes:
     return out.getvalue()
 
 
+def cover_resize(image_bytes: bytes, width: int, height: int) -> bytes:
+    """Rasmni cho'zmasdan berilgan o'lchamga keltiradi: avval markazdan kerakli
+    nisbatga kesadi (crop), keyin o'lchamini o'zgartiradi (PNG qaytaradi)."""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+    target = width / height
+    if w / h > target:  # juda keng — yon tomonlardan kesamiz
+        new_w = int(h * target)
+        left = (w - new_w) // 2
+        img = img.crop((left, 0, left + new_w, h))
+    elif w / h < target:  # juda baland — yuqori/pastdan kesamiz
+        new_h = int(w / target)
+        top = (h - new_h) // 2
+        img = img.crop((0, top, w, top + new_h))
+    img = img.resize((width, height), Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
 def add_banner_text(image_bytes: bytes, text: str) -> bytes:
     """Banner rasmiga safe zone to'liq to'ldirib matn yozadi.
 

@@ -7,11 +7,14 @@ import urllib.request
 
 import replicate
 
+import time
+
 from config import (
     FLUX_DEV_MODEL,
     FLUX_MODEL,
     FLUX_REDUX_MODEL,
     IDEOGRAM_MODEL,
+    NANO_BANANA_MODEL,
     REPLICATE_API_TOKEN,
 )
 
@@ -158,3 +161,76 @@ async def generate_img2img(image_bytes: bytes,
         raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
     logger.info("Replicate img2img so'rovi: strength=%s", prompt_strength)
     return await asyncio.to_thread(_run_img2img_sync, image_bytes, prompt_strength)
+
+
+# ============================================================
+# Nano Banana — thumbnail: prompt'dan yaratish / rasmni ko'rsatma bilan tahrirlash
+# ============================================================
+
+class ThumbModelError(RuntimeError):
+    """Model rasm yarata olmadi (prompt tushunilmadi yoki xavfsizlik filtri)."""
+
+
+_THUMB_CREATE_PREFIX = (
+    "Create a YouTube video thumbnail (16:9): eye-catching, vivid colors, high contrast, "
+    "sharp focus, professional composition, no watermark, no logo. "
+    "If the request contains text to put on the image, render it exactly as written, "
+    "big and bold with a contrasting outline. Request: "
+)
+_THUMB_REFERENCE_PREFIX = (
+    "Create a YouTube video thumbnail (16:9) using the person/object from the provided image "
+    "(keep their face and identity recognizable). Eye-catching, vivid colors, high contrast, "
+    "professional composition, no watermark. If the request contains text to put on the image, "
+    "render it exactly as written, big and bold. Request: "
+)
+_THUMB_EDIT_PREFIX = (
+    "Edit the provided YouTube thumbnail image. Apply ONLY the requested change and keep "
+    "everything else exactly the same (composition, people, style, text unless asked). "
+    "If new text is requested, render it exactly as written. Change: "
+)
+
+
+def _read_output(output) -> bytes:
+    item = output[0] if isinstance(output, list) else output
+    if hasattr(item, "read"):
+        return item.read()
+    with urllib.request.urlopen(str(item)) as resp:
+        return resp.read()
+
+
+def _run_nano_sync(prompt: str, reference_bytes) -> bytes:
+    """Nano Banana'ni sinxron chaqiradi. Kam kredit rejimida (6 so'rov/daqiqa) 429 kelsa
+    12 soniya kutib 2 martagacha qayta uradi."""
+    client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+    for attempt in range(3):
+        inp = {"prompt": prompt, "aspect_ratio": "16:9", "output_format": "png"}
+        if reference_bytes:
+            bio = io.BytesIO(reference_bytes)
+            bio.name = "reference.png"
+            inp["image_input"] = [bio]
+        try:
+            return _read_output(client.run(NANO_BANANA_MODEL, input=inp))
+        except replicate.exceptions.ModelError as e:
+            raise ThumbModelError(str(e)) from e
+        except replicate.exceptions.ReplicateError as e:
+            msg = str(e).lower()
+            if attempt < 2 and ("429" in msg or "throttled" in msg):
+                logger.warning("Replicate throttle (kam kredit) — 12s kutib qayta: %s", attempt + 1)
+                time.sleep(12)
+                continue
+            raise
+    raise RuntimeError("Replicate: qayta urinishlar tugadi")
+
+
+async def generate_thumbnail_nano(prompt: str, reference_bytes=None, edit: bool = False) -> bytes:
+    """Thumbnail: matn prompt'dan yaratadi; reference_bytes berilsa — o'sha rasm asosida
+    (edit=True: tayyor oblojkani ko'rsatma bo'yicha o'zgartirish; edit=False: o'quvchi
+    yuborgan rasmdan oblojka yasash). PNG baytlarini qaytaradi."""
+    if not REPLICATE_API_TOKEN:
+        raise RuntimeError("REPLICATE_API_TOKEN sozlanmagan (.env faylga qo'shing)")
+    if reference_bytes:
+        prefix = _THUMB_EDIT_PREFIX if edit else _THUMB_REFERENCE_PREFIX
+    else:
+        prefix = _THUMB_CREATE_PREFIX
+    logger.info("Nano Banana so'rovi: edit=%s ref=%s", edit, bool(reference_bytes))
+    return await asyncio.to_thread(_run_nano_sync, prefix + prompt.strip(), reference_bytes)

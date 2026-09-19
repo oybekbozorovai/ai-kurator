@@ -17,7 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from config import DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT, FLUX_MODEL, FLUX_REDUX_MODEL
+from config import DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT, FLUX_MODEL, NANO_BANANA_MODEL
 from handlers.utils import split_for_telegram
 from keyboards import (
     MENU_TEXT,
@@ -27,7 +27,7 @@ from keyboards import (
     thumb_color_kb,
     thumb_download_again_kb,
     thumb_position_kb,
-    thumb_skip_kb,
+    thumb_result_kb,
     video_seo_menu_kb,
 )
 from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
@@ -47,8 +47,13 @@ from services.youtube_api import (
 from services.thumbnail import extract_video_id, fetch_best_thumbnail
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
-from services.image_service import add_text_to_thumbnail, resize_image, overlay_banner_frame, add_banner_text
-from services.replicate_service import generate_image, generate_img2img, generate_banner_image
+from services.image_service import add_text_to_thumbnail, cover_resize, resize_image, overlay_banner_frame, add_banner_text
+from services.replicate_service import (
+    ThumbModelError,
+    generate_banner_image,
+    generate_image,
+    generate_thumbnail_nano,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="youtube")
@@ -64,7 +69,8 @@ class YT(StatesGroup):
     avatar_name = State()     # avatar — kanal nomi kutilmoqda
     banner = State()          # banner — yo'nalish tanlash
     banner_name = State()     # banner — kanal nomi kutilmoqda
-    thumb_topic = State()     # thumbnail — video mavzusi
+    thumb_prompt = State()    # thumbnail — tavsif (prompt) yoki namuna rasm kutilmoqda
+    thumb_edit = State()      # thumbnail — tayyor rasmga o'zgartirish ko'rsatmasi kutilmoqda
     thumb_text = State()      # thumbnail — ustki matn
     thumb_position = State()  # thumbnail — matn joylashuvi
     thumb_color = State()     # thumbnail — matn rangi
@@ -414,8 +420,9 @@ GUIDE_TEXT = (
     "(tayyor yo'nalishlar yoki o'zingiznikini).\n\n"
     "🖼 Avatar yaratish — kanal uchun profil rasm (avatar) chizadi.\n\n"
     "🎨 Banner yaratish — kanal shapkasi (banner) chizadi.\n\n"
-    "🌅 Thumbnail yaratish — video uchun cover rasm. Mavzu yozasiz yoki namuna rasm "
-    "yuborasiz.\n\n"
+    "🌅 Video ustiga rasm yaratish — qanday oblojka kerakligini yozasiz (yoki o'z "
+    "rasmingizni yuborasiz), AI chizadi. Keyin «O'zgartirish» bilan ko'rsatma yozib "
+    "xohlagancha to'g'rilatasiz, «Ustiga aniq matn yozish» bilan matn qo'shasiz.\n\n"
     "📥 Video ma'lumotlarini olish — YouTube video havolasini yuborsangiz, "
     "videoning nomi, opisaniyesi va teglarini nusxalash uchun chiqaradi hamda "
     "ustidagi rasmni (oblojkani) eng sifatli variantda fayl qilib beradi.\n\n"
@@ -861,8 +868,28 @@ async def banner_name_process(message: Message, state: FSMContext) -> None:
 
 
 # ============================================================
-# Thumbnail (ko'p bosqichli)
+# Thumbnail — prompt asosida yaratish, ko'rsatma bilan tahrirlash, aniq matn qo'shish
 # ============================================================
+
+_THUMB_START_TEXT = (
+    "🌅 Video ustiga rasm yaratish\n\n"
+    "Qanday rasm kerakligini yozib yuboring — AI shu tavsif bo'yicha chizadi.\n"
+    "Yaxshi tavsifda: mavzu, rasmda nima bo'lsin, kayfiyat va ranglar, "
+    "ustiga yoziladigan matn.\n\n"
+    "Masalan:\n"
+    "«Telefon ustida o'sayotgan grafik, to'q ko'k fon, ustida katta sariq matn: "
+    "100 MING OBUNACHI»\n\n"
+    "💡 O'z rasmingizni (masalan, yuzingizni) ham yuborishingiz mumkin — izohida "
+    "nima qilishni yozing, AI shu rasm asosida oblojka yasaydi.\n\n"
+    "Natija chiqqach, «O'zgartirish» tugmasi bilan xohlagancha to'g'rilatasiz."
+)
+
+_THUMB_EDIT_TEXT = (
+    "✏️ Nimani o'zgartiray? Yozing.\n\n"
+    "Masalan: «fonni qizil qil», «matnni kattalashtir», «chap tomonga raketa qo'sh», "
+    "«matnni YANGI VIDEO ga almashtir», «odamni o'ngga sur»."
+)
+
 
 @router.callback_query(F.data == "menu:thumbnail")
 async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -873,43 +900,165 @@ async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not ok:
         await _deny_limit(callback, "image")
         return
-    await state.set_state(YT.thumb_topic)
-    await callback.message.edit_text(
-        "🌅 Thumbnail yaratish\n\n"
-        "1️⃣ Ikki yo'l bor:\n"
-        "• Video mavzusini YOZING — bot rasm chizadi\n"
-        "• YOKI namuna RASM yuboring — bot unga o'xshash rasm chizadi\n\n"
-        "Mavzu yozing yoki namuna rasm yuboring 👇",
-        reply_markup=home_kb(),
-    )
+    await state.clear()
+    await state.set_state(YT.thumb_prompt)
+    try:
+        await callback.message.edit_text(_THUMB_START_TEXT, reply_markup=home_kb())
+    except Exception:
+        # Natija (fayl) xabaridan kelgan bo'lsa — tahrirlab bo'lmaydi, yangi xabar
+        await callback.message.answer(_THUMB_START_TEXT, reply_markup=home_kb())
     await callback.answer()
 
 
-_TEXT_STEP = (
-    "2️⃣ Thumbnail ustiga qanday matn yozilsin?\n"
-    "Masalan: RASMDAGI MATN\n\n"
-    "Matn kerak bo'lmasa — pastdagi tugmani bosing."
-)
-
-
-@router.message(YT.thumb_topic, F.text & ~F.text.startswith("/"))
-async def thumb_get_topic(message: Message, state: FSMContext) -> None:
-    """O'quvchi mavzu yozdi — AI rasm chizadi."""
-    await state.update_data(topic=message.text.strip(), mode="ai")
-    await state.set_state(YT.thumb_text)
-    await message.answer(_TEXT_STEP, reply_markup=thumb_skip_kb())
-
-
-@router.message(YT.thumb_topic, F.photo)
-async def thumb_get_photo(message: Message, state: FSMContext) -> None:
-    """O'quvchi namuna rasm yubordi — unga o'xshash rasm chizamiz."""
+@router.message(YT.thumb_prompt, F.photo)
+async def thumb_prompt_photo(message: Message, state: FSMContext) -> None:
+    """O'quvchi o'z rasmini yubordi: izoh bo'lsa darhol yaratamiz, bo'lmasa so'raymiz."""
     file_id = message.photo[-1].file_id  # eng katta o'lchamdagisi
-    await state.update_data(mode="upload", photo_file_id=file_id, topic="O'z rasmi")
-    await state.set_state(YT.thumb_text)
+    caption = (message.caption or "").strip()
+    if caption:
+        await _thumb_generate(message, state, prompt=caption, ref_file_id=file_id)
+        return
+    await state.update_data(ref_file_id=file_id)
     await message.answer(
-        "✅ Namuna rasm qabul qilindi — unga o'xshash rasm chizaman.\n\n" + _TEXT_STEP,
-        reply_markup=thumb_skip_kb(),
+        "✅ Rasm qabul qilindi. Endi bu rasm bilan nima qilishni yozing.\n\n"
+        "Masalan: «meni YouTube oblojkasiga aylantir, orqa fon — zamonaviy studiya, "
+        "ustida matn: YANGI VIDEO»",
+        reply_markup=home_kb(),
     )
+
+
+@router.message(YT.thumb_prompt, F.text & ~F.text.startswith("/"))
+async def thumb_prompt_text(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    await _thumb_generate(message, state, prompt=message.text.strip(),
+                          ref_file_id=data.get("ref_file_id"))
+
+
+@router.callback_query(F.data == "thumb:edit")
+async def thumb_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
+    """Natija ostidagi «O'zgartirish» — ko'rsatma so'raymiz."""
+    data = await state.get_data()
+    if not data.get("last_file_id"):
+        await callback.answer("Avval rasm yarating (🔄 Yangi rasm).", show_alert=True)
+        return
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    ok, _ = _check_limit(callback.from_user.id, "image")
+    if not ok:
+        await _deny_limit(callback, "image")
+        return
+    await state.set_state(YT.thumb_edit)
+    await callback.message.answer(_THUMB_EDIT_TEXT, reply_markup=home_kb())
+    await callback.answer()
+
+
+@router.message(YT.thumb_edit, F.text & ~F.text.startswith("/"))
+async def thumb_edit_text(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    last = data.get("last_file_id")
+    if not last:
+        await state.clear()
+        await message.answer("Avval rasm yarating.", reply_markup=home_kb())
+        return
+    await _thumb_generate(message, state, prompt=message.text.strip(),
+                          ref_file_id=last, is_edit=True)
+
+
+async def _thumb_generate(message: Message, state: FSMContext, prompt: str,
+                          ref_file_id=None, is_edit: bool = False) -> None:
+    """Nano Banana orqali oblojka yaratadi (yoki tahrirlaydi) va natijani yuboradi."""
+    uid = message.from_user.id
+    if not await _gate_generation(message, state, "image"):
+        return
+    if len(prompt) < 3:
+        await message.answer("Tavsif juda qisqa. Qanday rasm kerakligini batafsilroq yozing.")
+        return
+
+    waiting = await message.answer(
+        "🎨 Rasm o'zgartirilmoqda... (10-30 soniya)" if is_edit
+        else "🎨 Rasm yaratilmoqda... (10-30 soniya)"
+    )
+    await message.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_PHOTO)
+
+    ref_bytes = None
+    if ref_file_id:
+        try:
+            buf = io.BytesIO()
+            await message.bot.download(ref_file_id, destination=buf)
+            ref_bytes = buf.getvalue()
+        except Exception:
+            logger.exception("Thumbnail: rasmni yuklab olib bo'lmadi (%s)", ref_file_id)
+            await waiting.edit_text(
+                "❌ Rasmni olib bo'lmadi. Iltimos, rasmni qayta yuboring.",
+                reply_markup=home_kb(),
+            )
+            return
+
+    try:
+        try:
+            image = await generate_thumbnail_nano(prompt, ref_bytes, edit=is_edit)
+        except ThumbModelError as first_err:
+            # Model o'zbekcha tavsifni tushunmadi/rad etdi — inglizcha promptga o'girib qayta
+            logger.warning("Nano Banana rad etdi (%s), inglizcha prompt bilan qayta", first_err)
+            en_prompt = await generate_image_prompt(prompt, kind="thumbnail", telegram_id=uid)
+            image = await generate_thumbnail_nano(en_prompt, ref_bytes, edit=is_edit)
+    except Exception:
+        logger.exception("Thumbnail yaratish xatosi (edit=%s)", is_edit)
+        await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
+        return
+
+    usage.record(uid, "thumbnail", kind="image", model=NANO_BANANA_MODEL)
+    try:
+        await waiting.delete()
+    except Exception:
+        pass
+    label = ("O'zgartirish — " if is_edit else "") + prompt[:30]
+    await _send_thumb_result(message, state, image, label=label)
+
+
+async def _send_thumb_result(message: Message, state: FSMContext, image: bytes,
+                             label: str, note: str = "", log: bool = True) -> None:
+    """1280x720 ga keltiradi, fayl qilib yuboradi, tarixga yozadi va keyingi qadam
+    tugmalarini ko'rsatadi. Rasm file_id'si state'da saqlanadi (o'zgartirish uchun)."""
+    image = cover_resize(image, 1280, 720)
+    caption = "✅ Oblojka tayyor! (1280x720)"
+    if note:
+        caption += f"\n{note}"
+    caption += (
+        "\n\nYoqmadimi? «O'zgartirish» tugmasini bosib, nimani o'zgartirishni yozing."
+        + GUIDE["thumbnail"]
+    )
+    sent = await message.answer_document(
+        BufferedInputFile(image, filename="thumbnail.png"),
+        caption=caption[:1024],
+        reply_markup=thumb_result_kb(),
+    )
+    if log:
+        log_generation(message.from_user.id, "thumbnail", "image",
+                       label=f"Thumbnail — {label}",
+                       result_type="file", file_id=sent.document.file_id)
+    # Holat: kutish yo'q (matn yozsa savol-javobga ketadi), lekin rasm ma'lumoti saqlanadi
+    await state.set_state(None)
+    await state.update_data(last_file_id=sent.document.file_id, ref_file_id=None, base_file_id=None)
+
+
+# --- Ustiga aniq matn yozish (AI'siz, PIL) ---
+
+@router.callback_query(F.data == "thumb:addtext")
+async def thumb_addtext_start(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if not data.get("last_file_id"):
+        await callback.answer("Avval rasm yarating (🔄 Yangi rasm).", show_alert=True)
+        return
+    await state.update_data(base_file_id=data["last_file_id"])
+    await state.set_state(YT.thumb_text)
+    await callback.message.answer(
+        "🔤 Rasm ustiga qanday matn yozilsin? Aynan shu ko'rinishda yoziladi.\n"
+        "Masalan: 100 MING OBUNACHI",
+        reply_markup=home_kb(),
+    )
+    await callback.answer()
 
 
 @router.message(YT.thumb_text, F.text & ~F.text.startswith("/"))
@@ -917,17 +1066,9 @@ async def thumb_get_text(message: Message, state: FSMContext) -> None:
     await state.update_data(overlay=message.text.strip())
     await state.set_state(YT.thumb_position)
     await message.answer(
-        "3️⃣ Matn rasmda qayerda joylashsin?",
+        "Matn rasmda qayerda joylashsin?",
         reply_markup=thumb_position_kb(),
     )
-
-
-@router.callback_query(YT.thumb_text, F.data == "thumb:notext")
-async def thumb_skip_text(callback: CallbackQuery, state: FSMContext) -> None:
-    """Matnsiz — to'g'ridan-to'g'ri rasm yaratiladi."""
-    await state.update_data(overlay="")
-    await callback.answer()
-    await _make_thumbnail(callback, state)
 
 
 @router.callback_query(YT.thumb_position, F.data.startswith("thumb:pos:"))
@@ -935,72 +1076,43 @@ async def thumb_get_position(callback: CallbackQuery, state: FSMContext) -> None
     await state.update_data(position=callback.data.split(":")[-1])
     await state.set_state(YT.thumb_color)
     await callback.message.edit_text(
-        "4️⃣ Matn rangi qanday bo'lsin?",
+        "Matn rangi qanday bo'lsin?",
         reply_markup=thumb_color_kb(),
     )
     await callback.answer()
 
 
 @router.callback_query(YT.thumb_color, F.data.startswith("thumb:color:"))
-async def thumb_generate(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(color=callback.data.split(":")[-1])
-    await callback.answer()
-    await _make_thumbnail(callback, state)
-
-
-async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
-    """Thumbnail rasmini yaratadi/oladi, matn bo'lsa qo'shadi va yuboradi."""
+async def thumb_overlay_text(callback: CallbackQuery, state: FSMContext) -> None:
+    """Tayyor oblojka ustiga matnni PIL bilan yozadi (AI ishlatilmaydi, limitga kirmaydi)."""
     data = await state.get_data()
-    topic = data.get("topic", "")
-    mode = data.get("mode", "ai")
-    photo_file_id = data.get("photo_file_id")
+    base_file_id = data.get("base_file_id") or data.get("last_file_id")
     overlay = data.get("overlay", "")
     position = data.get("position", "bottom")
-    color = data.get("color", "yellow")
-
-    await callback.message.edit_text("🎨 Thumbnail yaratilmoqda...")
+    color = callback.data.split(":")[-1]
+    await callback.answer()
+    if not base_file_id or not overlay:
+        await state.clear()
+        await callback.message.edit_text("Xatolik yuz berdi. Iltimos, qayta boshlang.",
+                                         reply_markup=home_kb())
+        return
+    await callback.message.edit_text("🔤 Matn qo'shilmoqda...")
     try:
-        if mode == "upload" and photo_file_id:
-            # Namuna rasm — yuklab olib, ~70% o'xshash yangi rasm chizamiz
-            buf = io.BytesIO()
-            await callback.bot.download(photo_file_id, destination=buf)
-            image = await generate_img2img(buf.getvalue())
-            usage.record(callback.from_user.id, "thumbnail", kind="image",
-                         model=FLUX_REDUX_MODEL)
-        else:
-            # AI rasm chizadi
-            prompt = await generate_image_prompt(
-                topic, kind="thumbnail", telegram_id=callback.from_user.id)
-            image = await generate_image(prompt, aspect_ratio="16:9")
-            usage.record(callback.from_user.id, "thumbnail", kind="image",
-                         model=FLUX_MODEL)
-        image = resize_image(image, 1280, 720)
-        if overlay:  # matn faqat kerak bo'lsa qo'shiladi
-            image = add_text_to_thumbnail(image, overlay, position, color)
+        buf = io.BytesIO()
+        await callback.bot.download(base_file_id, destination=buf)
+        image = add_text_to_thumbnail(resize_image(buf.getvalue(), 1280, 720),
+                                      overlay, position, color)
     except Exception:
-        logger.exception("Thumbnail yaratish xatosi")
-        await state.clear()  # xatoda holatni tozalaymiz (foydalanuvchi tuzoqda qolmasin)
+        logger.exception("Thumbnail matn qo'shish xatosi")
+        await state.set_state(None)
         await callback.message.edit_text(ERROR_TEXT, reply_markup=home_kb())
         return
-
-    await state.clear()
     try:
         await callback.message.delete()
     except Exception:
         pass
-
-    caption = "✅ Thumbnail tayyor! (1280x720)"
-    if overlay:
-        caption += f"\nMatn: «{overlay}»"
-    caption += GUIDE["thumbnail"]
-    sent = await callback.message.answer_document(
-        BufferedInputFile(image, filename="thumbnail.png"),
-        caption=caption,
-        reply_markup=home_kb(),
-    )
-    log_generation(callback.from_user.id, "thumbnail", "image",
-                   label=f"Thumbnail — {topic[:30]}",
-                   result_type="file", file_id=sent.document.file_id)
+    await _send_thumb_result(callback.message, state, image,
+                             label=f"Matn: {overlay[:30]}", note=f"Matn: «{overlay}»", log=False)
 
 
 # ============================================================
@@ -1187,7 +1299,7 @@ async def history_open(callback: CallbackQuery) -> None:
 
 @router.message(StateFilter(
     YT.channel, YT.video, YT.channel_analysis,
-    YT.avatar_name, YT.banner_name, YT.thumb_topic, YT.thumb_text, YT.thumb_download,
+    YT.avatar_name, YT.banner_name, YT.thumb_prompt, YT.thumb_edit, YT.thumb_text, YT.thumb_download,
 ))
 async def _yt_expect_text(message: Message) -> None:
     """Matn kutilgan bosqichda rasm/stiker yuborilsa — jim qolmasdan yo'naltiradi."""

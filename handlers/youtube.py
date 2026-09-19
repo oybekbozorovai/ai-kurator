@@ -1219,10 +1219,8 @@ async def thumb_download_start(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(YT.thumb_download)
     text = (
         "📥 Video ma'lumotlarini olish\n\n"
-        "YouTube video havolasini yuboring. Masalan:\n"
-        "• https://youtu.be/dQw4w9WgXcQ\n"
-        "• https://www.youtube.com/watch?v=dQw4w9WgXcQ\n"
-        "• https://youtube.com/shorts/...\n\n"
+        "YouTube video havolasini yuboring. Masalan:\n\n"
+        "• https://www.youtube.com/watch?v=B6_TVN18bwI\n\n"
         "Bot videoning nomi, opisaniyesi va teglarini nusxalash uchun chiqarib "
         "beradi, shuningdek video ustidagi rasmni (oblojkani) YouTube'da mavjud "
         "bo'lgan eng sifatli variantda fayl ko'rinishida yuboradi."

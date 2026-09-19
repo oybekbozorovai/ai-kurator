@@ -26,6 +26,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔍 Raqobatchi kanallar analizi", callback_data="menu:channel_analysis")],
         [InlineKeyboardButton(text="🎬 Video nomlari, tavsifi, teglari", callback_data="menu:video_seo")],
         [InlineKeyboardButton(text="🌅 Video ustiga rasm yaratish", callback_data="menu:thumbnail")],
+        [InlineKeyboardButton(text="📥 Video rasmini yuklab olish", callback_data="menu:thumb_download")],
         [InlineKeyboardButton(text="🏆 Sertifikat olish", callback_data="menu:cert")],
         [InlineKeyboardButton(text="📂 Mening ishlarim", callback_data="menu:history")],
         [InlineKeyboardButton(text="ℹ️ Botdan foydalanish", callback_data="menu:guide")],
@@ -100,3 +101,11 @@ def history_kb(items: list) -> InlineKeyboardMarkup:
         )])
     rows.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def thumb_download_again_kb() -> InlineKeyboardMarkup:
+    """Video rasmi yuborilgandan keyin: yana bir video yoki bosh menyu."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📥 Yana bir video", callback_data="menu:thumb_download")],
+        [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
+    ])

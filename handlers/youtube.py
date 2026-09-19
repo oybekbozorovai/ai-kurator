@@ -25,6 +25,7 @@ from keyboards import (
     home_kb,
     main_menu_kb,
     thumb_color_kb,
+    thumb_download_again_kb,
     thumb_position_kb,
     thumb_skip_kb,
     video_seo_menu_kb,
@@ -39,6 +40,7 @@ from services.gemini import (
     generate_video_seo,
 )
 from services.youtube_api import fetch_channel_analysis, is_configured as yt_api_ready
+from services.thumbnail import extract_video_id, fetch_best_thumbnail
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
 from services.image_service import add_text_to_thumbnail, resize_image, overlay_banner_frame, add_banner_text
@@ -62,6 +64,7 @@ class YT(StatesGroup):
     thumb_text = State()      # thumbnail — ustki matn
     thumb_position = State()  # thumbnail — matn joylashuvi
     thumb_color = State()     # thumbnail — matn rangi
+    thumb_download = State()  # video oblojkasini yuklab olish — video linki kutilmoqda
 
 
 ERROR_TEXT = (
@@ -399,6 +402,8 @@ GUIDE_TEXT = (
     "🎨 Banner yaratish — kanal shapkasi (banner) chizadi.\n\n"
     "🌅 Thumbnail yaratish — video uchun cover rasm. Mavzu yozasiz yoki namuna rasm "
     "yuborasiz.\n\n"
+    "📥 Video rasmini yuklab olish — YouTube video havolasini yuborsangiz, uning "
+    "ustidagi rasmni (oblojkani) eng sifatli variantda fayl qilib beradi.\n\n"
     "📂 Mening ishlarim — ilgari yaratgan ishlaringiz tarixi.\n\n"
     "🛠 Texnik nosozlik (bot/mini-app/login ishlamasa) — /yordam buyrug'ini yozing.\n\n"
     "Qaytish uchun 🏠 Bosh menyu tugmasini bosing."
@@ -987,6 +992,79 @@ async def _make_thumbnail(callback: CallbackQuery, state: FSMContext) -> None:
 # Mening ishlarim (tarix)
 # ============================================================
 
+# ============================================================
+# Video oblojkasini (thumbnail) yuklab olish
+# ============================================================
+
+@router.callback_query(F.data == "menu:thumb_download")
+async def thumb_download_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    await state.set_state(YT.thumb_download)
+    text = (
+        "📥 Video rasmini yuklab olish\n\n"
+        "YouTube video havolasini yuboring. Masalan:\n"
+        "• https://youtu.be/dQw4w9WgXcQ\n"
+        "• https://www.youtube.com/watch?v=dQw4w9WgXcQ\n"
+        "• https://youtube.com/shorts/...\n\n"
+        "Bot video ustidagi rasmni (oblojkani) YouTube'da mavjud bo'lgan "
+        "eng sifatli variantda fayl ko'rinishida yuboradi."
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=home_kb())
+    except Exception:
+        await callback.message.answer(text, reply_markup=home_kb())
+    await callback.answer()
+
+
+@router.message(YT.thumb_download, F.text & ~F.text.startswith("/"))
+async def thumb_download_process(message: Message, state: FSMContext) -> None:
+    video_id = extract_video_id(message.text)
+    if not video_id:
+        await message.answer(
+            "❌ Bu YouTube video havolasiga o'xshamadi.\n\n"
+            "To'liq havolani yuboring (youtube.com/watch?v=..., youtu.be/... "
+            "yoki youtube.com/shorts/...).",
+            reply_markup=home_kb(),
+        )
+        return
+
+    waiting = await message.answer("📥 Rasm qidirilmoqda...")
+    try:
+        info = await asyncio.to_thread(fetch_best_thumbnail, video_id)
+    except Exception:
+        logger.exception("Thumbnail yuklab olish xatosi (%s)", video_id)
+        info = None
+
+    if not info:
+        await waiting.edit_text(
+            "❌ Bu video uchun rasm topilmadi.\n\n"
+            "Video o'chirilgan, yopiq (private) yoki havola noto'g'ri bo'lishi mumkin. "
+            "Boshqa havola bilan urinib ko'ring.",
+            reply_markup=home_kb(),
+        )
+        return
+
+    w, h = info["width"], info["height"]
+    caption = f"🖼 {info['title']}\n" if info.get("title") else ""
+    caption += f"📐 {w}×{h} — {info['quality']} sifat\n"
+    if w < 1280:
+        caption += "ℹ️ YouTube bu video uchun bundan kattaroq rasm saqlamagan.\n"
+    caption += "\nFayl ko'rinishida yuborildi — sifati siqilmagan."
+
+    await message.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_DOCUMENT)
+    await message.answer_document(
+        BufferedInputFile(info["data"], filename=f"{video_id}_{w}x{h}.jpg"),
+        caption=caption[:1024],
+        reply_markup=thumb_download_again_kb(),
+    )
+    await waiting.delete()
+    await state.clear()
+    logger.info("Thumbnail yuklab berildi: user=%s video=%s %sx%s (%s)",
+                message.from_user.id, video_id, w, h, info["quality"])
+
+
 @router.callback_query(F.data == "menu:history")
 async def history_show(callback: CallbackQuery, state: FSMContext) -> None:
     if not _is_allowed(callback.from_user.id):
@@ -1039,7 +1117,7 @@ async def history_open(callback: CallbackQuery) -> None:
 
 @router.message(StateFilter(
     YT.channel, YT.video, YT.channel_analysis,
-    YT.avatar_name, YT.banner_name, YT.thumb_topic, YT.thumb_text,
+    YT.avatar_name, YT.banner_name, YT.thumb_topic, YT.thumb_text, YT.thumb_download,
 ))
 async def _yt_expect_text(message: Message) -> None:
     """Matn kutilgan bosqichda rasm/stiker yuborilsa — jim qolmasdan yo'naltiradi."""

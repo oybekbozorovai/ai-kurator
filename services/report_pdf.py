@@ -259,8 +259,8 @@ def build_competitor_report(
     pdf.set_font("dv", "B", 10)
     pdf._mc(0, 5.5, "Metodika (Oybek Bozorov):")
     for r in (
-        "Kamida 10 ta kanal: 5 tasi eski (2+ yil), 5 tasi yangi (3 oygacha). 10 ta topilmasa — yo'nalishda ishlamagan ma'qul.",
-        "Faqat eskilar bo'lsa — yo'nalish hozir trendda emas. Faqat yangilar bo'lsa — shubhali.",
+        "Kamida 10 ta kanal: 5 tasi eski (2+ yil, obunachisi ko'p), 5 tasi yangi (3 oygacha, prosmotri ko'p). 10 ta topilmasa — yo'nalishda ishlamagan ma'qul.",
+        "Faqat eski kanallar bo'lsa — yo'nalish hozir trendda emas. Faqat yangilar bo'lsa — yo'nalish monetizatsiyaga ulanishi aniq bo'lmaydi.",
         "Faollik: har kanal haftasiga kamida 3 ta video. Bo'lmasa — yo'nalishda muammo bor.",
         "Strategiya: video soni, davomiyligi, chiqarish vaqti, nom/teg/opisaniye, oblojkalar, 48 soatlik va oxirgi 7 video ko'rishlari.",
     ):

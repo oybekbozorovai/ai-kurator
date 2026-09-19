@@ -463,17 +463,15 @@ _ANALYSIS_START_TEXT = (
     "🔍 Raqobatchi kanallar analizi\n\n"
     "Bitta yo'nalishdan KAMIDA 10 ta kanal havolasini yuboring — bitta xabarda, "
     "har biri yangi qatorda:\n"
-    "• 5 tasi ESKI — 2–3 yil oldin ochilgan, katta kanallar\n"
-    "• 5 tasi YANGI — oxirgi 1–3 oyda ochilgan kanallar\n\n"
-    "Nega shunday? 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
-    "Faqat eskilar bo'lsa — yo'nalish hozir trendda emas. Faqat yangilar bo'lsa — shubhali.\n\n"
+    "• 5 tasi ESKI — 2–3 yil oldin ochilgan, obunachisi ko'p kanallar\n"
+    "• 5 tasi YANGI — oxirgi 1–3 oyda ochilgan, prosmotri ko'p kanallar\n\n"
+    "Nega men bitta yo'nalish bo'yicha 10 ta YouTube kanal linkini so'rayman? "
+    "Siz tanlamoqchi bo'lgan yo'nalishda 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
+    "Faqat eski YouTube kanallar bo'lsa — bu yo'nalish hozir trendda emas degani. "
+    "Faqat yangi kanallar bo'lsa — bu yo'nalish monetizatsiyaga ulanishi aniq bo'lmaydi. "
+    "Shuning uchun 5 ta eski obunachisi ko'p va 5 ta yangi prosmotri ko'p yig'gan YouTube "
+    "kanallar linkini jo'nating. Bot sizga to'liq tahlilni PDF ko'rinishida hisobot qilib beradi.\n\n"
     "Qabul qilinadi: kanal havolasi, @nom yoki kanalning istalgan video havolasi.\n\n"
-    "Bot nima qiladi:\n"
-    "1) kanallar faolmi (haftasiga 3+ video) — tekshiradi;\n"
-    "2) strategiyani tahlil qiladi: chiqarish soni va vaqti, davomiylik, nom/teg/opisaniye, "
-    "oblojkalar, 48 soatlik va oxirgi 7 video ko'rishlari;\n"
-    "3) chiroyli PDF hisobot beradi;\n"
-    "4) 7 kun davomida har kuni ertalab shu kanallar bo'yicha ma'lumot yuborib boradi.\n\n"
     "Havolalarni yuboring 👇"
 )
 
@@ -506,7 +504,7 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
         await message.answer(
             f"Xabaringizda {len(refs)} ta kanal havolasi topildi, kamida {MIN_CHANNELS} ta kerak "
             "(5 eski + 5 yangi).\n\n"
-            "Metodika: 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
+            "Siz tanlamoqchi bo'lgan yo'nalishda 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
             "Yana kanallar topib, hammasini bitta xabarda (har biri yangi qatorda) yuboring.",
             reply_markup=home_kb(),
         )

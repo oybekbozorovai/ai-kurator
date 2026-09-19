@@ -4,7 +4,7 @@ Metodika (Oybek Bozorov):
 1. Kamida 10 ta kanal: 5 tasi eski (>= 2 yil), 5 tasi yangi (<= 3 oy).
    - 10 ta topilmasa — yo'nalishda ishlamagan ma'qul.
    - Faqat eskilar bo'lsa — yo'nalish hozir trendda emas.
-   - Faqat yangilar bo'lsa (katta eski kanal yo'q) — shubhali.
+   - Faqat yangilar bo'lsa (katta eski kanal yo'q) — monetizatsiyaga ulanishi aniq emas.
 2. Faollik: haftasiga kamida 3 ta video. Bo'lmasa — yo'nalishda muammo.
 3. Strategiya: kuniga nechta video, davomiylik, 48 soatlik ko'rishlar, oxirgi 7 video,
    nom/teg/opisaniye uslubi, oblojkalar, chiqarish vaqti — o'xshashmi yoki har xilmi.
@@ -224,7 +224,7 @@ def evaluate_niche(channels: List[dict]) -> dict:
         warnings.append(mix_verdict)
         score += 10
     elif new and not old:
-        mix_verdict = "Faqat yangi kanallar bor, 2–3 yillik katta eski kanal yo'q — bu SHUBHALI (yo'nalish sinalmagan yoki qisqa muddatli hayp bo'lishi mumkin)."
+        mix_verdict = "Faqat yangi kanallar bor, 2–3 yillik katta eski kanal yo'q — bu yo'nalish monetizatsiyaga ulanishi aniq bo'lmaydi."
         warnings.append(mix_verdict)
         score += 15
     elif len(old) >= MIN_OLD and len(new) >= MIN_NEW:

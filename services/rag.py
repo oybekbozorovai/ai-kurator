@@ -261,6 +261,37 @@ def _extract_module_lesson(query: str) -> Tuple[Optional[str], Optional[str]]:
     return module, lesson
 
 
+# Ustoz ko'rsatmasi: jonli efirlar (9-, 10-modul) javob va manba sifatida ISHLATILMAYDI —
+# faqat video darslar. Manba yo'lida shu so'z bo'lsa, bo'lak qidiruvdan chiqariladi.
+EXCLUDED_SOURCE_KEYWORDS = ("jonli-efir",)
+
+
+def _is_excluded(chunk: Dict) -> bool:
+    src = (chunk.get("source") or "").lower()
+    return any(kw in src for kw in EXCLUDED_SOURCE_KEYWORDS)
+
+
+_allowed_cache: Dict[int, np.ndarray] = {}
+
+
+def _search_allowed(store, qvec: np.ndarray, k: int) -> List[Tuple[Dict, float]]:
+    """Ruxsat etilgan (jonli efir bo'lmagan) bo'laklar ichida kosinus qidiruv."""
+    key = id(store)
+    idx = _allowed_cache.get(key)
+    if idx is None:
+        idx = np.array([i for i, c in enumerate(store.chunks) if not _is_excluded(c)], dtype=int)
+        _allowed_cache.clear()
+        _allowed_cache[key] = idx
+    if idx.size == 0:
+        return []
+    sub = store.matrix[idx]
+    norms = np.linalg.norm(sub, axis=1) * np.linalg.norm(qvec)
+    norms = np.where(norms == 0, 1e-9, norms)
+    scores = (sub @ qvec) / norms
+    top = np.argsort(-scores)[:k]
+    return [(store.chunks[int(idx[i])], float(scores[i])) for i in top]
+
+
 async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
     """Savol uchun eng yaqin bo'laklarni topadi.
     Agar savolda 'X-modul Y-dars' aniq ko'rsatilsa, shu darsdan bo'laklar ustun beriladi.
@@ -278,7 +309,7 @@ async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
     if qmodule and qlesson:
         matching_idx = [
             i for i, c in enumerate(store.chunks)
-            if c.get("module") == qmodule and c.get("lesson") == qlesson
+            if c.get("module") == qmodule and c.get("lesson") == qlesson and not _is_excluded(c)
         ]
         if matching_idx:
             sub_matrix = store.matrix[matching_idx]
@@ -288,8 +319,9 @@ async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
             top_local = np.argsort(-scores)[:k]
             return [(store.chunks[matching_idx[i]], float(scores[i])) for i in top_local]
 
-    # Umumiy qidiruv — mavzuga aloqasiz bo'laklarni chegara bilan kesamiz
-    hits = store.search(qvec, k=k)
+    # Umumiy qidiruv — FAQAT video darslar ichida (jonli efirlar oldindan chiqarilgan),
+    # mavzuga aloqasiz bo'laklar chegara bilan kesiladi
+    hits = _search_allowed(store, qvec, k)
     relevant = [(c, s) for c, s in hits if s >= MIN_SIMILARITY]
     if hits and not relevant:
         logger.info("Mavzudan tashqari savol (eng yuqori moslik %.2f): %s",

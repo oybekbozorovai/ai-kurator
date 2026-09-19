@@ -39,7 +39,11 @@ from services.gemini import (
     generate_image_prompt,
     generate_video_seo,
 )
-from services.youtube_api import fetch_channel_analysis, is_configured as yt_api_ready
+from services.youtube_api import (
+    fetch_channel_analysis,
+    fetch_video_info,
+    is_configured as yt_api_ready,
+)
 from services.thumbnail import extract_video_id, fetch_best_thumbnail
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
@@ -260,27 +264,36 @@ async def _send_text_result(message: Message, text: str) -> None:
 _SEO_BLOCK_LIMIT = 3800  # bitta xabar chegarasi (4096'dan xavfsiz pastda)
 
 
-def _split_raw(text: str, limit: int) -> list:
-    """Matnni chegaradan oshmaydigan bo'laklarga bo'ladi (qator, keyin belgi bo'yicha).
-    Escape'dan OLDIN bo'linadi — HTML entity (&amp;) ikkiga bo'linib qolmasin."""
-    out = []
+def _split_escaped(text: str, limit: int) -> list:
+    """Matnni HTML-escape qilib, escape'dan KEYINGI uzunligi `limit`dan oshmaydigan
+    bo'laklarga bo'ladi (avval qator, kerak bo'lsa belgi bo'yicha).
+    Entity (&amp;) ichida hech qachon bo'linmaydi. Qaytgan bo'laklar allaqachon escape qilingan."""
+    out: list = []
     cur = ""
-    for line in text.split("\n"):
-        if cur and len(cur) + len(line) + 1 > limit:
+    for line in str(text).split("\n"):
+        esc = html.escape(line)
+        if len(esc) > limit:
+            # Juda uzun qator — belgi-belgilab (escape qilingan holda) bo'lamiz
+            if cur:
+                out.append(cur)
+                cur = ""
+            buf = ""
+            for ch in line:
+                e = html.escape(ch)
+                if len(buf) + len(e) > limit:
+                    out.append(buf)
+                    buf = ""
+                buf += e
+            cur = buf
+            continue
+        if cur and len(cur) + 1 + len(esc) > limit:
             out.append(cur)
-            cur = line
+            cur = esc
         else:
-            cur = f"{cur}\n{line}" if cur else line
+            cur = f"{cur}\n{esc}" if cur else esc
     if cur:
         out.append(cur)
-    final = []
-    for chunk in out:
-        while len(chunk) > limit:
-            final.append(chunk[:limit])
-            chunk = chunk[limit:]
-        if chunk:
-            final.append(chunk)
-    return final or [""]
+    return out or [""]
 
 
 def _seo_blocks(name: str, titles: list, description: str, tags: list) -> list:
@@ -300,16 +313,16 @@ def _seo_blocks(name: str, titles: list, description: str, tags: list) -> list:
     blocks.append("\n".join(head))
 
     if description:
-        chunks = _split_raw(str(description), _SEO_BLOCK_LIMIT - 60)
+        chunks = _split_escaped(str(description), _SEO_BLOCK_LIMIT - 60)
         for i, chunk in enumerate(chunks):
             label = "📝 Opisaniye (bosib nusxalang):" if i == 0 else "📝 Opisaniye (davomi):"
-            blocks.append(f"{label}\n<pre>{html.escape(chunk)}</pre>")
+            blocks.append(f"{label}\n<pre>{chunk}</pre>")
 
     if tags:
         tag_str = ", ".join(str(t) for t in tags)
-        for i, chunk in enumerate(_split_raw(tag_str, _SEO_BLOCK_LIMIT - 60)):
+        for i, chunk in enumerate(_split_escaped(tag_str, _SEO_BLOCK_LIMIT - 60)):
             label = "🏷 Teglar (bosib nusxalang):" if i == 0 else "🏷 Teglar (davomi):"
-            blocks.append(f"{label}\n<pre>{html.escape(chunk)}</pre>")
+            blocks.append(f"{label}\n<pre>{chunk}</pre>")
 
     # Qo'llanmani oxirgi blokka qo'shamiz (agar sig'sa)
     if blocks and len(blocks[-1]) + len(GUIDE["video_seo"]) < _SEO_BLOCK_LIMIT:
@@ -319,14 +332,15 @@ def _seo_blocks(name: str, titles: list, description: str, tags: list) -> list:
     return blocks
 
 
-async def _send_seo_html(message: Message, blocks: list) -> None:
-    """Nusxalanadigan SEO bloklarini ketma-ket yuboradi; oxirgisiga 🏠 tugma."""
+async def _send_seo_html(message: Message, blocks: list, last_kb=None) -> None:
+    """Nusxalanadigan SEO bloklarini ketma-ket yuboradi; oxirgisiga tugma (default 🏠)."""
+    last_kb = last_kb or home_kb()
     for i, block in enumerate(blocks):
         last = i == len(blocks) - 1
         try:
             await message.answer(
                 block, parse_mode="HTML",
-                reply_markup=home_kb() if last else None,
+                reply_markup=last_kb if last else None,
             )
         except Exception:
             logger.exception("SEO blok yuborilmadi (uzunlik=%d)", len(block))
@@ -336,7 +350,7 @@ async def _send_seo_html(message: Message, blocks: list) -> None:
             import html as _h
             plain = _h.unescape(plain)
             await message.answer(
-                plain, reply_markup=home_kb() if last else None
+                plain, reply_markup=last_kb if last else None
             )
 
 
@@ -403,7 +417,8 @@ GUIDE_TEXT = (
     "🌅 Thumbnail yaratish — video uchun cover rasm. Mavzu yozasiz yoki namuna rasm "
     "yuborasiz.\n\n"
     "📥 Video rasmini yuklab olish — YouTube video havolasini yuborsangiz, uning "
-    "ustidagi rasmni (oblojkani) eng sifatli variantda fayl qilib beradi.\n\n"
+    "ustidagi rasmni (oblojkani) eng sifatli variantda fayl qilib beradi hamda "
+    "videoning nomi, opisaniyesi va teglarini nusxalash uchun chiqaradi.\n\n"
     "📂 Mening ishlarim — ilgari yaratgan ishlaringiz tarixi.\n\n"
     "🛠 Texnik nosozlik (bot/mini-app/login ishlamasa) — /yordam buyrug'ini yozing.\n\n"
     "Qaytish uchun 🏠 Bosh menyu tugmasini bosing."
@@ -1009,13 +1024,51 @@ async def thumb_download_start(callback: CallbackQuery, state: FSMContext) -> No
         "• https://www.youtube.com/watch?v=dQw4w9WgXcQ\n"
         "• https://youtube.com/shorts/...\n\n"
         "Bot video ustidagi rasmni (oblojkani) YouTube'da mavjud bo'lgan "
-        "eng sifatli variantda fayl ko'rinishida yuboradi."
+        "eng sifatli variantda fayl ko'rinishida yuboradi, shuningdek videoning "
+        "nomi, opisaniyesi va teglarini nusxalash uchun chiqarib beradi."
     )
     try:
         await callback.message.edit_text(text, reply_markup=home_kb())
     except Exception:
         await callback.message.answer(text, reply_markup=home_kb())
     await callback.answer()
+
+
+def _video_info_blocks(info: dict) -> list:
+    """Videoning haqiqiy nomi, opisaniyesi va teglarini nusxalanadigan HTML bloklar qilib qaytaradi."""
+    title = info.get("title") or "(nomsiz)"
+    head = ["🎬 Video nomi (bosib nusxalang):", f"<code>{html.escape(title)}</code>"]
+    meta = []
+    if info.get("channel_title"):
+        meta.append(f"📺 {html.escape(info['channel_title'])}")
+    if info.get("published_at"):
+        meta.append(f"📅 {info['published_at']}")
+    if info.get("views"):
+        meta.append(f"👁 {info['views']:,}")
+    if info.get("likes"):
+        meta.append(f"👍 {info['likes']:,}")
+    if meta:
+        head.append("")
+        head.append(" · ".join(meta))
+    blocks = ["\n".join(head)]
+
+    desc = (info.get("description") or "").strip()
+    if desc:
+        for i, chunk in enumerate(_split_escaped(desc, _SEO_BLOCK_LIMIT - 60)):
+            label = "📝 Opisaniye (bosib nusxalang):" if i == 0 else "📝 Opisaniye (davomi):"
+            blocks.append(f"{label}\n<pre>{chunk}</pre>")
+    else:
+        blocks.append("📝 Opisaniye: bu videoda yozilmagan.")
+
+    tags = info.get("tags") or []
+    if tags:
+        tag_str = ", ".join(tags)
+        for i, chunk in enumerate(_split_escaped(tag_str, _SEO_BLOCK_LIMIT - 60)):
+            label = f"🏷 Teglar — {len(tags)} ta (bosib nusxalang):" if i == 0 else "🏷 Teglar (davomi):"
+            blocks.append(f"{label}\n<pre>{chunk}</pre>")
+    else:
+        blocks.append("🏷 Teglar: bu videoda teglar qo'yilmagan.")
+    return blocks
 
 
 @router.message(YT.thumb_download, F.text & ~F.text.startswith("/"))
@@ -1030,39 +1083,56 @@ async def thumb_download_process(message: Message, state: FSMContext) -> None:
         )
         return
 
-    waiting = await message.answer("📥 Rasm qidirilmoqda...")
-    try:
-        info = await asyncio.to_thread(fetch_best_thumbnail, video_id)
-    except Exception:
-        logger.exception("Thumbnail yuklab olish xatosi (%s)", video_id)
+    waiting = await message.answer("📥 Rasm va ma'lumotlar olinmoqda...")
+    # Rasm (i.ytimg) va ma'lumot (Data API) parallel olinadi; API kalit bo'lmasa faqat rasm
+    thumb_task = asyncio.to_thread(fetch_best_thumbnail, video_id)
+    if yt_api_ready():
+        info_task = asyncio.to_thread(fetch_video_info, video_id)
+    else:
+        info_task = asyncio.sleep(0, result=None)
+    thumb, info = await asyncio.gather(thumb_task, info_task, return_exceptions=True)
+    if isinstance(thumb, BaseException):
+        logger.exception("Thumbnail yuklab olish xatosi (%s)", video_id, exc_info=thumb)
+        thumb = None
+    if isinstance(info, BaseException):
+        logger.exception("Video ma'lumot xatosi (%s)", video_id, exc_info=info)
         info = None
 
-    if not info:
+    if not thumb and not info:
         await waiting.edit_text(
-            "❌ Bu video uchun rasm topilmadi.\n\n"
+            "❌ Bu video topilmadi.\n\n"
             "Video o'chirilgan, yopiq (private) yoki havola noto'g'ri bo'lishi mumkin. "
             "Boshqa havola bilan urinib ko'ring.",
             reply_markup=home_kb(),
         )
         return
 
-    w, h = info["width"], info["height"]
-    caption = f"🖼 {info['title']}\n" if info.get("title") else ""
-    caption += f"📐 {w}×{h} — {info['quality']} sifat\n"
-    if w < 1280:
-        caption += "ℹ️ YouTube bu video uchun bundan kattaroq rasm saqlamagan.\n"
-    caption += "\nFayl ko'rinishida yuborildi — sifati siqilmagan."
+    if thumb:
+        w, h = thumb["width"], thumb["height"]
+        title = (info or {}).get("title") or thumb.get("title")
+        caption = f"🖼 {title}\n" if title else ""
+        caption += f"📐 {w}×{h} — {thumb['quality']} sifat\n"
+        if w < 1280:
+            caption += "ℹ️ YouTube bu video uchun bundan kattaroq rasm saqlamagan.\n"
+        caption += "\nFayl ko'rinishida yuborildi — sifati siqilmagan."
+        await message.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_DOCUMENT)
+        await message.answer_document(
+            BufferedInputFile(thumb["data"], filename=f"{video_id}_{w}x{h}.jpg"),
+            caption=caption[:1024],
+            reply_markup=None if info else thumb_download_again_kb(),
+        )
+    else:
+        await message.answer("⚠️ Rasm topilmadi, lekin video ma'lumotlari quyida.")
 
-    await message.bot.send_chat_action(message.chat.id, ChatAction.UPLOAD_DOCUMENT)
-    await message.answer_document(
-        BufferedInputFile(info["data"], filename=f"{video_id}_{w}x{h}.jpg"),
-        caption=caption[:1024],
-        reply_markup=thumb_download_again_kb(),
-    )
+    if info:
+        await _send_seo_html(message, _video_info_blocks(info), last_kb=thumb_download_again_kb())
+
     await waiting.delete()
     await state.clear()
-    logger.info("Thumbnail yuklab berildi: user=%s video=%s %sx%s (%s)",
-                message.from_user.id, video_id, w, h, info["quality"])
+    logger.info("Video yuklab berildi: user=%s video=%s rasm=%s info=%s teglar=%d",
+                message.from_user.id, video_id,
+                f"{thumb['width']}x{thumb['height']}" if thumb else "-",
+                bool(info), len((info or {}).get("tags") or []))
 
 
 @router.callback_query(F.data == "menu:history")

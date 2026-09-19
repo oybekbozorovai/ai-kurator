@@ -181,3 +181,34 @@ def fetch_channel_analysis(raw_input: str) -> Optional[dict]:
         "thumbnail": thumb.get("url"),
         "videos": videos,
     }
+
+
+def fetch_video_info(video_id: str) -> Optional[dict]:
+    """Bitta videoning ochiq ma'lumotlari: nomi, tavsifi, teglari, kanal, sana, statistika.
+    API kalit yo'q yoki video topilmasa None."""
+    if not is_configured():
+        return None
+    data = _get("videos", {"part": "snippet,statistics", "id": video_id})
+    items = (data or {}).get("items") or []
+    if not items:
+        return None
+    sn = items[0].get("snippet") or {}
+    st = items[0].get("statistics") or {}
+
+    def _int(v) -> int:
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return {
+        "video_id": video_id,
+        "title": (sn.get("title") or "").strip(),
+        "description": (sn.get("description") or "").strip(),
+        "tags": [str(t) for t in (sn.get("tags") or [])],
+        "channel_title": (sn.get("channelTitle") or "").strip(),
+        "published_at": (sn.get("publishedAt") or "")[:10],
+        "views": _int(st.get("viewCount")),
+        "likes": _int(st.get("likeCount")),
+        "comments": _int(st.get("commentCount")),
+    }

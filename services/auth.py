@@ -12,6 +12,7 @@ Telefon E.164 formatda: "+998XXXXXXXXX" (Supabase kanonik). normalize_phone
 A.Y.P.I normalizePhone bilan bir xil natija beradi.
 """
 import logging
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -136,6 +137,9 @@ def _now() -> int:
     return int(time.time())
 
 
+_FRAC_RE = re.compile(r"\.(\d+)(?=[+\-Z]|$)")
+
+
 def _date_to_ts(date_str: Optional[str]) -> int:
     """cohorts.ends_at ("2026-09-01" yoki ISO) → unix timestamp (kun oxiri, UTC).
     Bo'sh/yo'q bo'lsa 0 (cheksiz)."""
@@ -145,6 +149,11 @@ def _date_to_ts(date_str: Optional[str]) -> int:
     try:
         if "T" in s:
             s = s.replace("Z", "+00:00")
+            # Supabase kasr soniyani 1-9 xonali yuboradi (masalan .90986);
+            # fromisoformat (3.9/3.10) faqat 3 yoki 6 xonani qabul qiladi -> 6 xonaga keltiramiz
+            m = _FRAC_RE.search(s)
+            if m:
+                s = s[:m.start()] + "." + (m.group(1) + "000000")[:6] + s[m.end():]
             dt = datetime.fromisoformat(s)
         else:
             dt = datetime.fromisoformat(s + "T23:59:59+00:00")

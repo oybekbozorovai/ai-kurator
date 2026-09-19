@@ -75,11 +75,15 @@ YT_DB_PATH = BASE_DIR / "data" / "yt.db"
 
 # --- Sertifikat ---
 CERT_VERIFY_BASE_URL = _clean(os.getenv("CERT_VERIFY_BASE_URL", "https://youtubeai.uz/sert/"))
-CERT_PROMPT_DAYS = int(os.getenv("CERT_PROMPT_DAYS", "10"))
+# QR havola oxiriga qo'shiladigan UTM (analitika). Bo'sh bo'lsa qo'shilmaydi.
+CERT_QR_SUFFIX = _clean(os.getenv("CERT_QR_SUFFIX", "?utm_source=sertifikat&utm_medium=qr"))
+# Sertifikat o'quvchi botga (raqami bilan) qo'shilgandan necha kun o'tgach ochiladi.
+# Shu kuni bot o'zi eslatma yuboradi.
+CERT_OPEN_AFTER_DAYS = int(os.getenv("CERT_OPEN_AFTER_DAYS", "80"))
+# Bitta o'quvchi sertifikatni necha marta olishi mumkin (ismdagi xatoni to'g'rilash uchun).
+# Har qayta olishda eski sertifikat bekor bo'lib, yangi ID bilan beriladi.
+CERT_MAX_ISSUES = int(os.getenv("CERT_MAX_ISSUES", "3"))
 COURSE_NAME = _clean(os.getenv("COURSE_NAME", "YouTube AI"))
-# Bu sanadan OLDIN botga qo'shilgan eski o'quvchilar sertifikatni darhol oladi
-# (patok/muddatdan qat'i nazar). Keyingilar oddiy 90-kun → oxirgi 10 kun qoidasi bo'yicha.
-CERT_GRANDFATHER_BEFORE = _clean(os.getenv("CERT_GRANDFATHER_BEFORE", "2026-06-20"))
 CERT_TEMPLATE = BASE_DIR / "assets" / "certificate_template.png"
 CERT_FONT = BASE_DIR / "assets" / "fonts" / "AlexBrush-Regular.ttf"
 

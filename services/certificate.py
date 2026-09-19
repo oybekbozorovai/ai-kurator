@@ -7,7 +7,7 @@ import string
 from PIL import Image, ImageDraw, ImageFont
 import qrcode
 
-from config import CERT_FONT, CERT_TEMPLATE, CERT_VERIFY_BASE_URL
+from config import CERT_FONT, CERT_TEMPLATE, CERT_QR_SUFFIX, CERT_VERIFY_BASE_URL
 
 # Kirill → lotin (o'zbek)
 _TRANSLIT = {
@@ -95,7 +95,7 @@ def render_certificate(full_name: str, cert_id: str) -> bytes:
     d.text((x, 620), full_name, font=f, fill=(80, 112, 240), anchor="ls")
 
     qr = qrcode.QRCode(box_size=6, border=1)
-    qr.add_data(CERT_VERIFY_BASE_URL + cert_id)
+    qr.add_data(CERT_VERIFY_BASE_URL + cert_id + CERT_QR_SUFFIX)
     qr.make(fit=True)
     q_img = qr.make_image(fill_color=(20, 20, 20), back_color="white")
     # PilImage wrapper → PIL Image

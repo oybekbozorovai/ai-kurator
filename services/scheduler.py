@@ -11,7 +11,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import CERT_PROMPT_DAYS, KICK_CHAT_IDS
+from config import CERT_MAX_ISSUES, CERT_OPEN_AFTER_DAYS, KICK_CHAT_IDS
 from handlers.utils import safe_send
 from services.auth import (
     get_expired_users,
@@ -137,33 +137,37 @@ async def maybe_send_daily_reminder(bot: Bot) -> int:
     return sent
 
 
+CERT_PROMPT_MESSAGE = (
+    "🏆 Tabriklaymiz, {name}!\n\n"
+    "Siz kursda {days} kunni tamomladingiz va endi sertifikat olishingiz mumkin.\n\n"
+    "Sertifikat olish uchun quyidagi tugmani bosing va sertifikatga yoziladigan "
+    "to'liq Ism Familiyangizni yozib yuboring.\n\n"
+    "⚠️ Ism Familiyani diqqat bilan, xatosiz yozing. Sertifikat jami {max} marta "
+    "beriladi — xato bo'lsa, {max} martagacha to'g'rilab qayta olishingiz mumkin."
+)
+
+
 async def prompt_certificates(bot: Bot) -> int:
-    """Muddat tugashiga CERT_PROMPT_DAYS kun qolganlarni sertifikat olishga taklif qiladi."""
-    users = get_users_for_certificate(CERT_PROMPT_DAYS)
+    """Botga qo'shilganiga CERT_OPEN_AFTER_DAYS kun to'lgan o'quvchilarga bir marta
+    sertifikat olish eslatmasini yuboradi (Ism Familiya yuborish kerakligi bilan)."""
+    users = get_users_for_certificate(CERT_OPEN_AFTER_DAYS)
     if not users:
         return 0
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Sertifikatni olish", callback_data="cert:start")
+        InlineKeyboardButton(text="🏆 Sertifikatni olish", callback_data="cert:start")
     ]])
     sent = 0
-    for telegram_id, phone, first_name, exp, cohort_id in users:
-        name_str = first_name or "Talaba"
-        try:
-            await bot.send_message(
-                telegram_id,
-                f"Tabriklaymiz, {name_str}!\n\n"
-                "Siz kursni muvaffaqiyatli tamomlayapsiz. "
-                "Sertifikatingizni olishingiz mumkin.",
-                reply_markup=kb,
-            )
+    for telegram_id, phone, first_name, cohort_id in users:
+        text = CERT_PROMPT_MESSAGE.format(
+            name=first_name or "Talaba", days=CERT_OPEN_AFTER_DAYS, max=CERT_MAX_ISSUES,
+        )
+        ok = await safe_send(bot, telegram_id, text, reply_markup=kb)
+        if ok:
             sent += 1
-        except (TelegramBadRequest, TelegramForbiddenError):
-            pass
-        except Exception as e:
-            logger.warning("Sertifikat xabari yuborilmadi (user=%s): %s", telegram_id, e)
+        # Bloklagan/o'chgan foydalanuvchiga ham belgilaymiz — har soat qayta urinmaslik uchun
         mark_cert_prompted(telegram_id, str(cohort_id))
         await asyncio.sleep(0.1)
-    logger.info("Sertifikat taklifi yuborildi: %d ta", sent)
+    logger.info("Sertifikat eslatmasi yuborildi: %d ta (jami nomzod: %d)", sent, len(users))
     return sent
 
 

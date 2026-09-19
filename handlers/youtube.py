@@ -416,9 +416,9 @@ GUIDE_TEXT = (
     "🎨 Banner yaratish — kanal shapkasi (banner) chizadi.\n\n"
     "🌅 Thumbnail yaratish — video uchun cover rasm. Mavzu yozasiz yoki namuna rasm "
     "yuborasiz.\n\n"
-    "📥 Video rasmini yuklab olish — YouTube video havolasini yuborsangiz, uning "
-    "ustidagi rasmni (oblojkani) eng sifatli variantda fayl qilib beradi hamda "
-    "videoning nomi, opisaniyesi va teglarini nusxalash uchun chiqaradi.\n\n"
+    "📥 Video ma'lumotlarini olish — YouTube video havolasini yuborsangiz, "
+    "videoning nomi, opisaniyesi va teglarini nusxalash uchun chiqaradi hamda "
+    "ustidagi rasmni (oblojkani) eng sifatli variantda fayl qilib beradi.\n\n"
     "📂 Mening ishlarim — ilgari yaratgan ishlaringiz tarixi.\n\n"
     "🛠 Texnik nosozlik (bot/mini-app/login ishlamasa) — /yordam buyrug'ini yozing.\n\n"
     "Qaytish uchun 🏠 Bosh menyu tugmasini bosing."
@@ -1018,14 +1018,14 @@ async def thumb_download_start(callback: CallbackQuery, state: FSMContext) -> No
         return
     await state.set_state(YT.thumb_download)
     text = (
-        "📥 Video rasmini yuklab olish\n\n"
+        "📥 Video ma'lumotlarini olish\n\n"
         "YouTube video havolasini yuboring. Masalan:\n"
         "• https://youtu.be/dQw4w9WgXcQ\n"
         "• https://www.youtube.com/watch?v=dQw4w9WgXcQ\n"
         "• https://youtube.com/shorts/...\n\n"
-        "Bot video ustidagi rasmni (oblojkani) YouTube'da mavjud bo'lgan "
-        "eng sifatli variantda fayl ko'rinishida yuboradi, shuningdek videoning "
-        "nomi, opisaniyesi va teglarini nusxalash uchun chiqarib beradi."
+        "Bot videoning nomi, opisaniyesi va teglarini nusxalash uchun chiqarib "
+        "beradi, shuningdek video ustidagi rasmni (oblojkani) YouTube'da mavjud "
+        "bo'lgan eng sifatli variantda fayl ko'rinishida yuboradi."
     )
     try:
         await callback.message.edit_text(text, reply_markup=home_kb())

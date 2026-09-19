@@ -9,10 +9,10 @@ from typing import List
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import CERT_MAX_ISSUES, CERT_OPEN_AFTER_DAYS, KICK_CHAT_IDS
-from handlers.utils import safe_send
+from handlers.utils import safe_send, split_for_telegram
 from services.auth import (
     get_expired_users,
     get_setting,
@@ -23,6 +23,10 @@ from services.auth import (
     set_setting,
 )
 from services.cert_store import get_users_for_certificate, mark_cert_prompted
+from services import watch_store as ws
+from services.gemini import daily_watch_comment
+from services.report_pdf import build_watch_report
+from services.watch_digest import build_digest, take_snapshots, today_key, weekly_summary
 from services.support_store import get_unnotified_resolved, mark_notified
 
 logger = logging.getLogger(__name__)
@@ -264,3 +268,101 @@ async def _kick_from_all_chats(bot: Bot, user_id: int, first_name: str) -> bool:
 async def _notify_user(bot: Bot, telegram_id: int) -> None:
     """Talabaga shaxsiy chatda muddat tugagani haqida xabar yuboradi (429 ishlanadi)."""
     await safe_send(bot, telegram_id, EXPIRY_MESSAGE)
+
+
+# ============================================================
+# Raqobatchi kanallar — 7 kunlik kuzatuv (har kuni ertalab)
+# ============================================================
+
+WATCH_DIGEST_HOUR_UTC = 4      # 04:00 UTC = 09:00 Toshkent
+WATCH_INTERVAL = 30 * 60       # har 30 daqiqada tekshiradi
+
+WATCH_DISCLAIMER = (
+    "\n\n🤖 Oybek Bozorov AI yordamchisi analiz qilib berdi. AI adashishi mumkin — "
+    "100% ishonmang, raqamlarni o'zingiz ham tekshiring."
+)
+
+
+def _watch_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⏹ Kuzatuvni to'xtatish", callback_data="watch:stop")
+    ]])
+
+
+async def competitor_watch_loop(bot: Bot) -> None:
+    """Har kuni belgilangan soatdan keyin faol kuzatuvlar bo'yicha kunlik xabar yuboradi."""
+    while True:
+        try:
+            await run_watch_digests(bot)
+        except Exception as e:
+            logger.exception("Kuzatuv xabari xatolik: %s", e)
+        await asyncio.sleep(WATCH_INTERVAL)
+
+
+async def run_watch_digests(bot: Bot) -> int:
+    if datetime.utcnow().hour < WATCH_DIGEST_HOUR_UTC:
+        return 0
+    day = today_key()
+    watches = [w for w in ws.active_watches() if w.get("last_digest_day") != day]
+    # Analiz qilingan kunning o'zida yubormaymiz (baseline shu kuni olingan)
+    from datetime import datetime as _dt
+    from services.competitor import TASHKENT
+    watches = [w for w in watches
+               if _dt.fromtimestamp(w["started_at"], TASHKENT).strftime("%Y-%m-%d") != day]
+    if not watches:
+        return 0
+
+    all_ids = sorted({c["channel_id"] for w in watches for c in w["channels"]})
+    try:
+        snaps = await asyncio.to_thread(take_snapshots, all_ids, day)
+    except Exception as e:
+        logger.exception("Kuzatuv snapshot xatosi: %s", e)
+        return 0
+
+    sent = 0
+    for w in watches:
+        tid = w["telegram_id"]
+        try:
+            facts, text = build_digest(w, snaps, day)
+        except Exception as e:
+            logger.exception("Kuzatuv digest xatosi (user=%s): %s", tid, e)
+            continue
+        comment = ""
+        try:
+            comment = await daily_watch_comment(facts, telegram_id=tid)
+        except Exception as e:
+            logger.warning("Kuzatuv AI izohi yo'q (user=%s): %s", tid, e)
+        full = text + ("\n\n🤖 AI izohi:\n" + comment if comment else "") + WATCH_DISCLAIMER
+        parts = split_for_telegram(full)
+        ok = True
+        for i, part in enumerate(parts):
+            last = i == len(parts) - 1
+            ok = await safe_send(bot, tid, part, reply_markup=_watch_kb() if last else None) and ok
+        n = ws.mark_digest_sent(tid, day)
+        sent += 1 if ok else 0
+        if n >= w["days"]:
+            await _finish_watch(bot, w)
+        await asyncio.sleep(0.2)
+    logger.info("Kuzatuv xabarlari yuborildi: %d ta", sent)
+    return sent
+
+
+async def _finish_watch(bot: Bot, w: dict) -> None:
+    """7-kun: yakuniy PDF hisobot va kuzatuvni yopish."""
+    tid = w["telegram_id"]
+    try:
+        channel_rows, day_rows, facts = weekly_summary(w)
+        try:
+            ai_text = await daily_watch_comment(facts, telegram_id=tid, weekly=True)
+        except Exception:
+            ai_text = ""
+        pdf = await asyncio.to_thread(build_watch_report, "O'quvchi", w.get("niche") or "", channel_rows, day_rows, ai_text)
+        await bot.send_document(
+            tid, BufferedInputFile(pdf, filename="kuzatuv_7kun.pdf"),
+            caption="📘 7 kunlik kuzatuv yakunlandi — yakuniy hisobot.\n"
+                    "Yangi kuzatuv uchun menyudan «Raqobatchi kanallar analizi» ni qayta bosing." + WATCH_DISCLAIMER,
+        )
+    except Exception as e:
+        logger.exception("Yakuniy kuzatuv hisoboti xatosi (user=%s): %s", tid, e)
+        await safe_send(bot, tid, "📘 7 kunlik kuzatuv yakunlandi." + WATCH_DISCLAIMER)
+    ws.stop_watch(tid)

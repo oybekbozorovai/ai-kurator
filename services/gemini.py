@@ -22,6 +22,16 @@ _model = genai.GenerativeModel(
     },
 )
 
+# Uzun tahlillar uchun (raqobatchi analizi, PDF matni): Gemini 2.5 "o'ylash" tokenlari ham
+# max_output_tokens ga kiradi — 4096 bilan javob MAX_TOKENS'da qisqarib qolardi.
+_model_long = genai.GenerativeModel(
+    GEMINI_MODEL,
+    generation_config={
+        "temperature": 0.3,
+        "max_output_tokens": 16384,
+    },
+)
+
 
 def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
@@ -56,9 +66,9 @@ async def grade_homework(
     return await _generate(prompt, telegram_id=telegram_id, service="grader")
 
 
-async def _generate(content, telegram_id=None, service=None) -> str:
+async def _generate(content, telegram_id=None, service=None, model=None) -> str:
     def _call():
-        response = _model.generate_content(content)
+        response = (model or _model).generate_content(content)
         text = response.text or ""
         # Iste'mol (token/xarajat) hisobi — best-effort, oqimni buzmaydi
         if service:
@@ -336,3 +346,84 @@ async def generate_image_prompt(user_input: str, kind: str, telegram_id=None) ->
     if text.startswith("⚠️"):
         raise RuntimeError(text)
     return text.strip().strip('"')
+
+
+# ============================================================
+# Raqobatchi kanallar analizi (metodika: Oybek Bozorov)
+# ============================================================
+
+_COMPETITOR_RULES = (
+    "QOIDALAR: Faqat berilgan FAKTLARDAN foydalan. Raqamlarni o'zing hisoblama va o'ylab topma. "
+    "Yangi kanal nomi yoki havola o'ylab topma. O'zbek tilida (lotin), sodda, ustozona ohangda yoz. "
+    "Emoji ishlatma. Markdown ishlatma — faqat bo'lim sarlavhalari '## ' bilan, ro'yxatlar '- ' bilan. "
+)
+
+
+async def analyze_competitors(facts: dict, telegram_id=None) -> str:
+    """Hisoblangan faktlar asosida yo'nalish va raqobatchilar strategiyasi bo'yicha matn."""
+    prompt = (
+        "Sen tajribali YouTube strateg va nisha (yo'nalish) tahlilchisisan. O'quvchi bitta yo'nalishdagi "
+        "raqobatchi kanallar ro'yxatini yubordi. Python allaqachon hamma raqamlarni hisoblab bo'ldi (JSON). "
+        "Sen shu faktlarni o'quvchi uchun tushunarli STRATEGIYA tahliliga aylantir.\n\n"
+        + _COMPETITOR_RULES +
+        "\n\nFAKTLAR (JSON):\n" + json.dumps(facts, ensure_ascii=False, indent=1) +
+        "\n\nQuyidagi bo'limlarni aynan shu tartibda yoz (har biri '## ' bilan boshlansin):\n"
+        "## Umumiy xulosa — yo'nalish qanday holatda, o'quvchi kirsa bo'ladimi (niche_eval ga tayan).\n"
+        "## Eski va yangi kanallar — eskilar qanday ishlayapti, yangilar o'sa olyaptimi, farq nimada.\n"
+        "## Yuklash strategiyasi — haftasiga/kuniga nechta video, qaysi kunlar va soatlarda (Toshkent vaqti), "
+        "kanallar bir xil vaqtda chiqaradimi yoki har xilmi.\n"
+        "## Video davomiyligi — necha daqiqa, Shorts ulushi, kanallar bir-biriga yaqinmi yoki farq katta.\n"
+        "## Video nomlari — uslub (uzunlik, raqamlar, katta harflar, savol), bir xilmi yoki har xil, 3 ta yaxshi nom namunasi (berilganlardan).\n"
+        "## Teglar va opisaniye — teg ishlatishadimi, nechta, umumiy teglar, opisaniye uzunligi va havolalar.\n"
+        "## Oblojkalar — thumbnails_review matniga tayanib: uslub, o'xshashlik, nima ishlayapti.\n"
+        "## Nima ishlayapti — outlier (portlagan) videolar va ularning umumiy jihati.\n"
+        "## O'quvchi uchun 7 qadam — aniq, bugun boshlasa bo'ladigan amaliy qadamlar (shu yo'nalish uchun).\n"
+        "## Ogohlantirishlar — xavflar, e'tibor berish kerak bo'lgan narsalar.\n\n"
+        "Jami 700–1000 so'z. Har bo'limda aniq raqamlarga tayan. Salomlashma va kirish so'zisiz — to'g'ridan-to'g'ri birinchi bo'limdan boshla."
+    )
+    text = await _generate(prompt, telegram_id=telegram_id, service="competitor_analysis", model=_model_long)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return text.strip()
+
+
+async def describe_thumbnails(sheet_png: bytes, labels: list, telegram_id=None) -> str:
+    """Oblojkalar jadvalini (har qator = bitta kanal, 3 ta oxirgi oblojka) ko'rib tahlil qiladi."""
+    import io as _io
+    from PIL import Image as _Image
+    img = _Image.open(_io.BytesIO(sheet_png))
+    prompt = (
+        "Bu rasm — YouTube kanallarning oblojkalari (thumbnail) jadvali. Har bir QATOR bitta kanal: "
+        "chapda kanal nomi, o'ngda uning oxirgi 3 ta video oblojkasi. Qatorlar tartibi: "
+        + "; ".join(f"{i + 1}) {l}" for i, l in enumerate(labels)) + ".\n\n"
+        "O'zbek tilida (lotin), emoji va markdownsiz, ro'yxat '- ' bilan:\n"
+        "- Har bir kanal uchun 1 qator: oblojka uslubi (ranglar, odam yuzi bormi, matn bormi va qanday, kompozitsiya).\n"
+        "- Keyin 'Umumiy:' — kanallar oblojkalari bir-biriga o'xshashmi yoki har xilmi (aniq ayt), "
+        "yo'nalishda qaysi uslub ustun, nima ishlayotganga o'xshaydi.\n"
+        "- Oxirida 'Tavsiya:' — o'quvchi o'z oblojkalarini qanday qilsin (3 ta aniq maslahat).\n"
+        "Jami 200–300 so'z."
+    )
+    text = await _generate([prompt, img], telegram_id=telegram_id, service="competitor_thumbs", model=_model_long)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return text.strip()
+
+
+async def daily_watch_comment(facts: dict, telegram_id=None, weekly: bool = False) -> str:
+    """Kunlik kuzatuv uchun qisqa izoh va taklif (80–120 so'z); weekly=True — 7 kun yakuni (200–300 so'z)."""
+    if weekly:
+        task = ("7 kunlik kuzatuv yakunlandi. Faktlar (JSON) asosida 200–300 so'zli xulosa yoz: qaysi kanallar "
+                "o'sdi va nima uchun, qanday strategiya ishladi (chiqarish soni/vaqti/davomiylik/nomlar), "
+                "o'quvchi o'z kanali uchun qaysi 5 ta aniq qadamni qilsin. '## ' sarlavhalar va '- ' ro'yxat ishlat.\n")
+    else:
+        task = ("Bugungi kun faktlari (JSON) asosida 80–120 so'zli qisqa izoh yoz: nima o'zgardi, qaysi kanal "
+                "yaxshi ishladi va nima uchun (nom/vaqt/davomiylik), o'quvchi bugun nima qilsin (1–2 aniq taklif).\n")
+    prompt = (
+        "Sen YouTube strateg mentorsan. O'quvchi raqobatchi kanallarni 7 kun kuzatyapti. " + task
+        + _COMPETITOR_RULES + ("" if weekly else "Bo'lim sarlavhasi kerak emas, faqat matn va '- ' ro'yxat.\n\n")
+        + "FAKTLAR:\n" + json.dumps(facts, ensure_ascii=False)
+    )
+    text = await _generate(prompt, telegram_id=telegram_id, service="competitor_watch", model=_model_long)
+    if text.startswith("⚠️"):
+        raise RuntimeError(text)
+    return text.strip()

@@ -9,6 +9,7 @@ import asyncio
 import html
 import io
 import logging
+from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ChatAction
@@ -33,17 +34,27 @@ from keyboards import (
 from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
 from services.auth import is_admin, is_user_approved
 from services.gemini import (
-    analyze_channel,
+    analyze_competitors,
+    describe_thumbnails,
     generate_banner_imagen,
     generate_channel_seo,
     generate_image_prompt,
     generate_video_seo,
 )
 from services.youtube_api import (
-    fetch_channel_analysis,
     fetch_video_info,
     is_configured as yt_api_ready,
 )
+from services import watch_store as ws
+from services.competitor import MIN_CHANNELS, cross_patterns, evaluate_niche, parse_channel_refs
+from services.competitor_run import (
+    MAX_CHANNELS,
+    baseline_snapshots,
+    build_sheet,
+    collect_channels,
+    find_suggestions,
+)
+from services.report_pdf import build_competitor_report
 from services.thumbnail import extract_video_id, fetch_best_thumbnail
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
@@ -412,8 +423,9 @@ GUIDE_TEXT = (
     "Har bir tugma nima uchun:\n\n"
     "🎓 Kurs bo'yicha savol — dars, vazifa yoki kurs mavzusi bo'yicha savolingizga "
     "AI darrov javob beradi.\n\n"
-    "🔍 Kanal analizi — YouTube kanal havolasini yuborsangiz, uning strategiyasi va "
-    "kuchli/zaif tomonlarini tahlil qiladi.\n\n"
+    "🔍 Raqobatchi kanallar analizi — bitta yo'nalishdan 10 ta kanal (5 eski + 5 yangi) "
+    "havolasini yuborasiz: bot faolligini, strategiyasini (vaqt, davomiylik, nom/teg/opisaniye, "
+    "oblojka) tahlil qilib PDF hisobot beradi va 7 kun har kuni kuzatuv xabarini yuboradi.\n\n"
     "📺 Kanal SEO — kanalingiz mavzusini yozsangiz, kanal nomi, tavsif va kalit so'zlar "
     "bo'yicha tavsiya beradi.\n\n"
     "🎬 Video SEO — video uchun sarlavha, tavsif va teglar yozib beradi "
@@ -447,86 +459,164 @@ async def show_guide(callback: CallbackQuery, state: FSMContext) -> None:
 # Kanal analizi (YouTube Data API)
 # ============================================================
 
+_ANALYSIS_START_TEXT = (
+    "🔍 Raqobatchi kanallar analizi\n\n"
+    "Bitta yo'nalishdan KAMIDA 10 ta kanal havolasini yuboring — bitta xabarda, "
+    "har biri yangi qatorda:\n"
+    "• 5 tasi ESKI — 2–3 yil oldin ochilgan, katta kanallar\n"
+    "• 5 tasi YANGI — oxirgi 1–3 oyda ochilgan kanallar\n\n"
+    "Nega shunday? 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
+    "Faqat eskilar bo'lsa — yo'nalish hozir trendda emas. Faqat yangilar bo'lsa — shubhali.\n\n"
+    "Qabul qilinadi: kanal havolasi, @nom yoki kanalning istalgan video havolasi.\n\n"
+    "Bot nima qiladi:\n"
+    "1) kanallar faolmi (haftasiga 3+ video) — tekshiradi;\n"
+    "2) strategiyani tahlil qiladi: chiqarish soni va vaqti, davomiylik, nom/teg/opisaniye, "
+    "oblojkalar, 48 soatlik va oxirgi 7 video ko'rishlari;\n"
+    "3) chiroyli PDF hisobot beradi;\n"
+    "4) 7 kun davomida har kuni ertalab shu kanallar bo'yicha ma'lumot yuborib boradi.\n\n"
+    "Havolalarni yuboring 👇"
+)
+
+
 @router.callback_query(F.data == "menu:channel_analysis")
 async def analysis_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     if not yt_api_ready():
-        await callback.answer(
-            "🔍 Kanal analizi tez orada ishga tushadi. Biroz kuting!",
-            show_alert=True,
-        )
+        await callback.answer("🔍 Kanal analizi tez orada ishga tushadi. Biroz kuting!", show_alert=True)
         return
     ok, _ = _check_limit(callback.from_user.id, "text")
     if not ok:
         await _deny_limit(callback, "text")
         return
+    await state.clear()
     await state.set_state(YT.channel_analysis)
-    await callback.message.edit_text(
-        "🔍 Kanal analizi\n\n"
-        "Tahlil qilmoqchi bo'lgan YouTube kanal havolasini yuboring.\n"
-        "Masalan:\n"
-        "• https://youtube.com/@MrBeast\n"
-        "• @MrBeast\n"
-        "• kanal ID (UC...)\n\n"
-        "Bot kanalning strategiyasini, yuklash jadvalini, sarlavhalari, "
-        "teglari va oblojkalarini tahlil qilib beradi.",
-        reply_markup=home_kb(),
-    )
+    try:
+        await callback.message.edit_text(_ANALYSIS_START_TEXT, reply_markup=home_kb())
+    except Exception:
+        await callback.message.answer(_ANALYSIS_START_TEXT, reply_markup=home_kb())
     await callback.answer()
 
 
 @router.message(YT.channel_analysis, F.text & ~F.text.startswith("/"))
 async def analysis_process(message: Message, state: FSMContext) -> None:
-    link = message.text.strip()
-    waiting = await message.answer("🔍 Kanal tahlil qilinmoqda... (10-30 soniya)")
-    try:
-        data = await asyncio.to_thread(fetch_channel_analysis, link)
-    except Exception:
-        logger.exception("Kanal analizi — fetch xatosi")
-        data = None
-
-    if not data:
-        await waiting.edit_text(
-            "❌ Bu kanalni topa olmadim.\n\n"
-            "Havolani tekshiring (to'liq link yoki @handle bo'lsin) va qayta "
-            "urinib ko'ring.",
+    refs = parse_channel_refs(message.text)
+    if len(refs) < MIN_CHANNELS:
+        await message.answer(
+            f"Xabaringizda {len(refs)} ta kanal havolasi topildi, kamida {MIN_CHANNELS} ta kerak "
+            "(5 eski + 5 yangi).\n\n"
+            "Metodika: 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
+            "Yana kanallar topib, hammasini bitta xabarda (har biri yangi qatorda) yuboring.",
             reply_markup=home_kb(),
         )
         return
-
-    if not data.get("videos"):
-        await waiting.edit_text(
-            "⚠️ Kanal topildi, lekin tahlil uchun ochiq videolar topilmadi.\n"
-            "Boshqa kanal bilan urinib ko'ring.",
-            reply_markup=home_kb(),
-        )
+    if not await _gate_generation(message, state, "text"):
         return
+    uid = message.from_user.id
+    note = f" (faqat birinchi {MAX_CHANNELS} tasi olinadi)" if len(refs) > MAX_CHANNELS else ""
+    waiting = await message.answer(f"🔍 1/4 — {len(refs)} ta kanal tekshirilmoqda{note}... (30–60 soniya)")
 
     try:
-        await waiting.edit_text("🧠 Strategiya tayyorlanmoqda...")
-        analysis = await analyze_channel(data, telegram_id=message.from_user.id)
+        channels, raw, unresolved = await asyncio.to_thread(collect_channels, refs)
+        if not channels:
+            await waiting.edit_text(
+                "❌ Hech bir kanal topilmadi. Havolalarni tekshirib qayta yuboring.",
+                reply_markup=home_kb(),
+            )
+            return
+        niche_eval = evaluate_niche(channels)
+        patterns = cross_patterns(channels)
+
+        await waiting.edit_text(f"🔍 2/4 — {len(channels)} ta kanal topildi. Oblojkalar va strategiya tahlil qilinmoqda...")
+        sheet, labels = await asyncio.to_thread(build_sheet, channels)
+        facts = {
+            "niche_eval": niche_eval, "patterns": patterns,
+            "channels": [{k: c[k] for k in (
+                "title", "category", "age_label", "subscribers", "uploads_per_week", "active",
+                "dur_avg_min", "shorts_share", "last7_avg", "views_48h", "top_hours", "top_weekdays",
+                "time_consistency", "title_len", "title_numbers", "title_caps", "sample_titles",
+                "tags_avg", "top_tags", "desc_len", "engagement", "outliers", "best_video")} for c in channels],
+        }
+        thumbs_task = describe_thumbnails(sheet, labels, telegram_id=uid) if sheet else asyncio.sleep(0, result="")
+        thumbs_text, ai_text = await asyncio.gather(thumbs_task, analyze_competitors(facts, telegram_id=uid),
+                                                    return_exceptions=True)
+        if isinstance(thumbs_text, BaseException):
+            logger.warning("Oblojka tahlili xatosi: %s", thumbs_text)
+            thumbs_text = ""
+        if isinstance(ai_text, BaseException):
+            logger.exception("Raqobatchi AI tahlili xatosi", exc_info=ai_text)
+            ai_text = "AI tahlil matni olinmadi. Yuqoridagi raqamlar va jadvallar to'g'ri."
+        facts["thumbnails_review"] = thumbs_text[:1500]
+
+        await waiting.edit_text("🔍 3/4 — Yo'nalishdagi boshqa kanallar qidirilmoqda...")
+        niche_query, suggestions = await asyncio.to_thread(find_suggestions, channels)
+
+        await waiting.edit_text("🔍 4/4 — PDF hisobot tayyorlanmoqda...")
+        student = message.from_user.full_name or "O'quvchi"
+        pdf = await asyncio.to_thread(
+            build_competitor_report, student, channels, niche_eval, patterns, ai_text, thumbs_text,
+            sheet, suggestions, unresolved, niche_query,
+        )
     except Exception:
-        logger.exception("Kanal analizi — Gemini xatosi")
+        logger.exception("Raqobatchi analizi xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
         return
 
-    header = (
-        f"🔍 {data.get('title', 'Kanal')} — tahlil\n"
-        f"👥 Obunachilar: {data.get('subscribers', 0):,}\n"
-        f"🎬 Videolar: {data.get('video_count', 0):,}\n"
-        f"👁 Umumiy ko'rishlar: {data.get('views', 0):,}\n"
-        f"{'─' * 20}\n\n"
+    # Qisqa xulosa + PDF
+    summary = (
+        f"{niche_eval['emoji']} Xulosa: {niche_eval['label']} — {niche_eval['score']}/100\n\n"
+        f"Kanallar: {niche_eval['count']} ta (eski {niche_eval['old']}, yangi {niche_eval['new']}, o'rta {niche_eval['mid']})\n"
+        f"Faol (haftasiga 3+ video): {niche_eval['active']} ta ({niche_eval['active_share']}%)\n"
+        f"O'rtacha video/hafta: {patterns.get('uploads_per_week_avg', 0)}, davomiylik ~{patterns.get('dur_avg_all', 0)} daq, "
+        f"Shorts ~{patterns.get('shorts_avg', 0)}%\n"
+        f"Chiqarish soatlari (Toshkent): " + ", ".join(f"{h:02d}:00" for h in patterns.get("top_hours", [])[:3]) + "\n"
     )
-    result = header + analysis
+    for wline in niche_eval["warnings"][:3]:
+        summary += f"⚠️ {wline}\n"
+    for rline in niche_eval["reasons"][:2]:
+        summary += f"✅ {rline}\n"
+    if unresolved:
+        summary += f"\nTopilmadi: {', '.join(unresolved[:5])}"
+    summary += ("\n\nTo'liq tahlil — PDF hisobotda 👇\n"
+                "🤖 Oybek Bozorov AI yordamchisi analiz qildi. AI adashishi mumkin — 100% ishonmang.")
+    await message.answer(summary)
+    fname = f"raqobat_analiz_{datetime.now().strftime('%Y%m%d')}.pdf"
+    sent = await message.answer_document(BufferedInputFile(pdf, filename=fname),
+                                         caption="📘 Raqobatchi kanallar analizi (PDF)")
+    log_generation(uid, "channel_analysis", "text", label=f"Raqobat — {niche_query or refs[0]}"[:40],
+                   result_type="file", file_id=sent.document.file_id)
 
-    log_generation(message.from_user.id, "channel_analysis", "text",
-                   label=data.get("title", link)[:40],
-                   result_type="text", result_text=result)
+    # 7 kunlik kuzatuvni boshlaymiz (baseline snapshot bugun)
+    try:
+        ws.start_watch(uid, niche_query or (channels[0]["title"] if channels else ""),
+                       [{"channel_id": c["channel_id"], "title": c["title"], "url": c["url"]} for c in channels])
+        await asyncio.to_thread(baseline_snapshots, raw)
+        watch_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⏹ Kuzatuvni to'xtatish", callback_data="watch:stop")],
+            [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
+        ])
+        await message.answer(
+            f"👀 7 kunlik kuzatuv boshlandi: {len(channels)} ta kanal.\n"
+            "Har kuni ertalab 09:00 da shu kanallar bo'yicha ma'lumot yuboraman: yangi videolar va "
+            "chiqqan vaqti, nom/teg/opisaniye, 48 soatlik ko'rishlar, obunachi o'sishi va AI izohi. "
+            "7-kuni yakuniy PDF hisobot keladi.",
+            reply_markup=watch_kb,
+        )
+    except Exception:
+        logger.exception("Kuzatuvni boshlashda xato (user=%s)", uid)
+
     await state.clear()
-    await waiting.delete()
-    await _send_text_result(message, result)
+    try:
+        await waiting.delete()
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "watch:stop")
+async def watch_stop(callback: CallbackQuery) -> None:
+    had = ws.stop_watch(callback.from_user.id)
+    await callback.answer("Kuzatuv to'xtatildi." if had else "Faol kuzatuv yo'q.", show_alert=True)
 
 
 # ============================================================

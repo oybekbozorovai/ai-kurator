@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import TELEGRAM_BOT_TOKEN
 from handlers import admin, certificate, group, private, support, youtube
 from services.scheduler import (
+    competitor_watch_loop,
     kick_expired_loop,
     support_notifier_loop,
 )
@@ -54,6 +55,10 @@ async def main() -> None:
     # Texnik yordam javoblarini o'quvchilarga yetkazish — har 1 daqiqada
     _spawn(support_notifier_loop(bot))
     logger.info("Texnik yordam notifier ishga tushirildi")
+
+    # Raqobatchi kanallar 7 kunlik kuzatuvi — har kuni 09:00 (Toshkent)
+    _spawn(competitor_watch_loop(bot))
+    logger.info("Raqobatchi kuzatuv scheduler ishga tushirildi")
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

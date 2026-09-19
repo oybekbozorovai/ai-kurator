@@ -212,3 +212,159 @@ def fetch_video_info(video_id: str) -> Optional[dict]:
         "likes": _int(st.get("likeCount")),
         "comments": _int(st.get("commentCount")),
     }
+
+
+# ============================================================
+# Raqobatchi kanallar analizi uchun kengaytirilgan ma'lumot
+# ============================================================
+
+ANALYSIS_VIDEOS = 50  # oxirgi 50 ta video (faol kanalda ~4 hafta)
+
+_DUR_RE = re.compile(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+
+
+def parse_duration(iso: str) -> int:
+    """ISO 8601 davomiylik (PT1H2M3S) -> soniya."""
+    m = _DUR_RE.fullmatch(iso or "")
+    if not m:
+        return 0
+    d, h, mi, s = (int(x or 0) for x in m.groups())
+    return d * 86400 + h * 3600 + mi * 60 + s
+
+
+def _channel_from_video(video_id: str) -> Optional[str]:
+    """Video linki berilsa — uning kanal ID'sini qaytaradi (1 birlik)."""
+    d = _get("videos", {"part": "snippet", "id": video_id})
+    items = (d or {}).get("items") or []
+    return items[0].get("snippet", {}).get("channelId") if items else None
+
+
+def fetch_channel_profile(raw_input: str) -> Optional[dict]:
+    """Kanal profili (ochilgan sana, statistika, uploads playlist). Video linki ham qabul qilinadi."""
+    if not is_configured():
+        return None
+    from services.thumbnail import extract_video_id
+    item = None
+    vid = extract_video_id(raw_input) if re.search(r"watch\?|youtu\.be/|/shorts/", raw_input, re.I) else None
+    if vid:
+        cid = _channel_from_video(vid)
+        if cid:
+            d = _get("channels", {"part": "snippet,statistics,contentDetails", "id": cid})
+            items = (d or {}).get("items") or []
+            item = items[0] if items else None
+    if not item:
+        item = _resolve_channel(raw_input)
+    if not item:
+        return None
+    sn = item.get("snippet", {}) or {}
+    st = item.get("statistics", {}) or {}
+    thumbs = sn.get("thumbnails", {}) or {}
+    thumb = (thumbs.get("high") or thumbs.get("medium") or thumbs.get("default") or {})
+    custom = sn.get("customUrl") or ""
+    cid = item.get("id", "")
+    return {
+        "channel_id": cid,
+        "title": sn.get("title", ""),
+        "handle": custom,
+        "url": f"https://www.youtube.com/{custom}" if custom.startswith("@") else f"https://www.youtube.com/channel/{cid}",
+        "created_at": sn.get("publishedAt", ""),
+        "country": sn.get("country", ""),
+        "description": sn.get("description", ""),
+        "subscribers": int(st.get("subscriberCount", 0) or 0),
+        "views": int(st.get("viewCount", 0) or 0),
+        "video_count": int(st.get("videoCount", 0) or 0),
+        "thumbnail": thumb.get("url"),
+        "uploads_playlist": (item.get("contentDetails", {}) or {}).get("relatedPlaylists", {}).get("uploads"),
+    }
+
+
+def _videos_details(video_ids: list) -> list:
+    """videos.list — 50 tagacha ID bitta so'rovda: snippet+statistics+contentDetails."""
+    out = []
+    for i in range(0, len(video_ids), 50):
+        chunk = video_ids[i:i + 50]
+        vd = _get("videos", {"part": "snippet,statistics,contentDetails", "id": ",".join(chunk)})
+        for v in (vd or {}).get("items") or []:
+            sn = v.get("snippet", {}) or {}
+            st = v.get("statistics", {}) or {}
+            cd = v.get("contentDetails", {}) or {}
+            thumbs = sn.get("thumbnails", {}) or {}
+            thumb = (thumbs.get("medium") or thumbs.get("high") or thumbs.get("default") or {})
+            dur = parse_duration(cd.get("duration", ""))
+            out.append({
+                "video_id": v.get("id", ""),
+                "url": f"https://www.youtube.com/watch?v={v.get('id', '')}",
+                "channel_id": sn.get("channelId", ""),
+                "title": sn.get("title", ""),
+                "description": sn.get("description", ""),
+                "tags": [str(t) for t in (sn.get("tags") or [])],
+                "published_at": sn.get("publishedAt", ""),
+                "duration_sec": dur,
+                "is_short": 0 < dur <= 60,
+                "views": int(st.get("viewCount", 0) or 0),
+                "likes": int(st.get("likeCount", 0) or 0),
+                "comments": int(st.get("commentCount", 0) or 0),
+                "thumbnail": thumb.get("url"),
+            })
+    return out
+
+
+def fetch_recent_videos_full(uploads_playlist_id: str, max_results: int = ANALYSIS_VIDEOS) -> list:
+    """Oxirgi `max_results` video (davomiylik bilan), yangidan eskiga."""
+    if not uploads_playlist_id:
+        return []
+    pl = _get("playlistItems", {
+        "part": "contentDetails", "playlistId": uploads_playlist_id,
+        "maxResults": min(50, max_results),
+    })
+    ids = [it.get("contentDetails", {}).get("videoId")
+           for it in (pl or {}).get("items") or []
+           if it.get("contentDetails", {}).get("videoId")]
+    videos = _videos_details(ids)
+    videos.sort(key=lambda v: v.get("published_at", ""), reverse=True)
+    return videos
+
+
+def fetch_channels_batch(channel_ids: list) -> dict:
+    """Bir nechta kanal statistikasi bitta so'rovda (50 tagacha). {channel_id: profile}."""
+    out = {}
+    ids = [c for c in channel_ids if c]
+    for i in range(0, len(ids), 50):
+        chunk = ids[i:i + 50]
+        d = _get("channels", {"part": "snippet,statistics,contentDetails", "id": ",".join(chunk)})
+        for item in (d or {}).get("items") or []:
+            sn = item.get("snippet", {}) or {}
+            st = item.get("statistics", {}) or {}
+            custom = sn.get("customUrl") or ""
+            cid = item.get("id", "")
+            out[cid] = {
+                "channel_id": cid,
+                "title": sn.get("title", ""),
+                "handle": custom,
+                "url": f"https://www.youtube.com/{custom}" if custom.startswith("@") else f"https://www.youtube.com/channel/{cid}",
+                "created_at": sn.get("publishedAt", ""),
+                "subscribers": int(st.get("subscriberCount", 0) or 0),
+                "views": int(st.get("viewCount", 0) or 0),
+                "video_count": int(st.get("videoCount", 0) or 0),
+                "uploads_playlist": (item.get("contentDetails", {}) or {}).get("relatedPlaylists", {}).get("uploads"),
+            }
+    return out
+
+
+def search_niche_channels(query: str, exclude_ids: set, published_after_iso: str, max_results: int = 25) -> list:
+    """Yo'nalish bo'yicha oxirgi paytda ko'p ko'rilgan videolarning kanallarini topadi
+    (search.list = 100 birlik, faqat bir marta). Qaytadi: profil ro'yxati (obunachi bo'yicha)."""
+    if not query.strip():
+        return []
+    d = _get("search", {
+        "part": "snippet", "type": "video", "order": "viewCount",
+        "publishedAfter": published_after_iso, "q": query, "maxResults": max_results,
+        "relevanceLanguage": "uz",
+    })
+    cids = []
+    for it in (d or {}).get("items") or []:
+        cid = it.get("snippet", {}).get("channelId")
+        if cid and cid not in exclude_ids and cid not in cids:
+            cids.append(cid)
+    profiles = fetch_channels_batch(cids[:20])
+    return sorted(profiles.values(), key=lambda p: p.get("subscribers", 0), reverse=True)

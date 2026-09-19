@@ -9,6 +9,7 @@ import asyncio
 import html
 import io
 import logging
+import re
 from datetime import datetime
 
 from aiogram import F, Router
@@ -16,7 +17,7 @@ from aiogram.enums import ChatType, ChatAction
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import DAILY_IMAGE_LIMIT, DAILY_TEXT_LIMIT, FLUX_MODEL, NANO_BANANA_MODEL
 from handlers.utils import split_for_telegram
@@ -35,6 +36,7 @@ from video_seo_presets import VIDEO_SEO_PRESETS, format_preset
 from services.auth import is_admin, is_user_approved
 from services.gemini import (
     analyze_competitors,
+    compare_niches,
     describe_thumbnails,
     generate_banner_imagen,
     generate_channel_seo,
@@ -45,6 +47,7 @@ from services.youtube_api import (
     fetch_video_info,
     is_configured as yt_api_ready,
 )
+from services import niche_store as ns
 from services import watch_store as ws
 from services.competitor import MIN_CHANNELS, cross_patterns, evaluate_niche, parse_channel_refs
 from services.competitor_run import (
@@ -54,7 +57,7 @@ from services.competitor_run import (
     collect_channels,
     find_suggestions,
 )
-from services.report_pdf import build_competitor_report
+from services.report_pdf import build_competitor_report, build_niche_comparison
 from services.thumbnail import extract_video_id, fetch_best_thumbnail
 from services.history import count_today, get_history, get_item, log_generation
 from services import usage
@@ -467,7 +470,9 @@ _ANALYSIS_START_TEXT = (
     "• 5 tasi YANGI — oxirgi 1–3 oyda ochilgan kanallar\n\n"
     "Nega shunday? 10 ta kanal topilmasa — bu yo'nalishda ishlamagan ma'qul. "
     "Faqat eskilar bo'lsa — yo'nalish hozir trendda emas. Faqat yangilar bo'lsa — shubhali.\n\n"
-    "Qabul qilinadi: kanal havolasi, @nom yoki kanalning istalgan video havolasi.\n\n"
+    "Qabul qilinadi: kanal havolasi, @nom yoki kanalning istalgan video havolasi.\n"
+    "Birinchi qatorga yo'nalish NOMINI yozing (masalan: «Oshxona» yoki «Avto obzor») — "
+    "keyin yo'nalishlarni taqqoslashda shu nom ko'rinadi.\n\n"
     "Bot nima qiladi:\n"
     "1) kanallar faolmi (haftasiga 3+ video) — tekshiradi;\n"
     "2) strategiyani tahlil qiladi: chiqarish soni va vaqti, davomiylik, nom/teg/opisaniye, "
@@ -492,11 +497,39 @@ async def analysis_start(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.clear()
     await state.set_state(YT.channel_analysis)
+    kb = _analysis_start_kb(ns.count_analyses(callback.from_user.id))
     try:
-        await callback.message.edit_text(_ANALYSIS_START_TEXT, reply_markup=home_kb())
+        await callback.message.edit_text(_ANALYSIS_START_TEXT, reply_markup=kb)
     except Exception:
-        await callback.message.answer(_ANALYSIS_START_TEXT, reply_markup=home_kb())
+        await callback.message.answer(_ANALYSIS_START_TEXT, reply_markup=kb)
     await callback.answer()
+
+
+def _analysis_start_kb(saved: int) -> InlineKeyboardMarkup:
+    rows = []
+    if saved >= 1:
+        rows.append([InlineKeyboardButton(
+            text=f"📊 Yo'nalishlarni taqqoslash ({saved} ta saqlangan)", callback_data="niche:compare")])
+    rows.append([InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _niche_name_from_text(text: str, refs: list) -> str:
+    """Xabardagi havolasiz birinchi qisqa qator — yo'nalish nomi (ixtiyoriy)."""
+    ref_keys = [r.lower() for r in refs]
+    for line in (text or "").split("\n"):
+        ln = line.strip().strip("-–•:").strip()
+        if not ln or len(ln) > 40:
+            continue
+        low = ln.lower()
+        if "youtube" in low or "youtu.be" in low or low.startswith("@") or low.startswith("uc"):
+            continue
+        if any(k in low for k in ref_keys):
+            continue
+        ln = re.sub(r"^(yo'nalish|nisha|niche|yonalish)\s*[:\-]\s*", "", ln, flags=re.I).strip()
+        if 2 <= len(ln) <= 40:
+            return ln
+    return ""
 
 
 @router.message(YT.channel_analysis, F.text & ~F.text.startswith("/"))
@@ -514,6 +547,7 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
     if not await _gate_generation(message, state, "text"):
         return
     uid = message.from_user.id
+    niche_name = _niche_name_from_text(message.text, refs)
     note = f" (faqat birinchi {MAX_CHANNELS} tasi olinadi)" if len(refs) > MAX_CHANNELS else ""
     waiting = await message.answer(f"🔍 1/4 — {len(refs)} ta kanal tekshirilmoqda{note}... (30–60 soniya)")
 
@@ -554,9 +588,10 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
 
         await waiting.edit_text("🔍 4/4 — PDF hisobot tayyorlanmoqda...")
         student = message.from_user.full_name or "O'quvchi"
+        niche_label = niche_name or niche_query or channels[0]["title"]
         pdf = await asyncio.to_thread(
             build_competitor_report, student, channels, niche_eval, patterns, ai_text, thumbs_text,
-            sheet, suggestions, unresolved, niche_query,
+            sheet, suggestions, unresolved, niche_label,
         )
     except Exception:
         logger.exception("Raqobatchi analizi xatosi")
@@ -565,6 +600,7 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
 
     # Qisqa xulosa + PDF
     summary = (
+        f"📌 Yo'nalish: {niche_label}\n"
         f"{niche_eval['emoji']} Xulosa: {niche_eval['label']} — {niche_eval['score']}/100\n\n"
         f"Kanallar: {niche_eval['count']} ta (eski {niche_eval['old']}, yangi {niche_eval['new']}, o'rta {niche_eval['mid']})\n"
         f"Faol (haftasiga 3+ video): {niche_eval['active']} ta ({niche_eval['active_share']}%)\n"
@@ -584,24 +620,34 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
     fname = f"raqobat_analiz_{datetime.now().strftime('%Y%m%d')}.pdf"
     sent = await message.answer_document(BufferedInputFile(pdf, filename=fname),
                                          caption="📘 Raqobatchi kanallar analizi (PDF)")
-    log_generation(uid, "channel_analysis", "text", label=f"Raqobat — {niche_query or refs[0]}"[:40],
+    log_generation(uid, "channel_analysis", "text", label=f"Raqobat — {niche_label}"[:40],
                    result_type="file", file_id=sent.document.file_id)
+    try:
+        ns.save_analysis(uid, niche_label, niche_query, niche_eval, patterns, channels)
+    except Exception:
+        logger.exception("Yo'nalish tahlilini saqlashda xato (user=%s)", uid)
+    saved = ns.count_analyses(uid)
 
     # 7 kunlik kuzatuvni boshlaymiz (baseline snapshot bugun)
     try:
-        ws.start_watch(uid, niche_query or (channels[0]["title"] if channels else ""),
+        ws.start_watch(uid, niche_label,
                        [{"channel_id": c["channel_id"], "title": c["title"], "url": c["url"]} for c in channels])
         await asyncio.to_thread(baseline_snapshots, raw)
-        watch_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⏹ Kuzatuvni to'xtatish", callback_data="watch:stop")],
-            [InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
-        ])
+        rows = [[InlineKeyboardButton(text="⏹ Kuzatuvni to'xtatish", callback_data="watch:stop")]]
+        if saved >= 2:
+            rows.append([InlineKeyboardButton(text=f"📊 Yo'nalishlarni taqqoslash ({saved} ta)",
+                                              callback_data="niche:compare")])
+        rows.append([InlineKeyboardButton(text="🔍 Yana bir yo'nalish", callback_data="menu:channel_analysis"),
+                     InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")])
+        compare_hint = ("\n\n📊 Boshqa yo'nalishni ham tahlil qilsangiz, «Yo'nalishlarni taqqoslash» "
+                        "tugmasi qaysi nishaga kirish yaxshiligini jadval qilib beradi." if saved < 2 else
+                        f"\n\n📊 Sizda {saved} ta yo'nalish tahlili saqlangan — taqqoslash mumkin.")
         await message.answer(
             f"👀 7 kunlik kuzatuv boshlandi: {len(channels)} ta kanal.\n"
             "Har kuni ertalab 09:00 da shu kanallar bo'yicha ma'lumot yuboraman: yangi videolar va "
             "chiqqan vaqti, nom/teg/opisaniye, 48 soatlik ko'rishlar, obunachi o'sishi va AI izohi. "
-            "7-kuni yakuniy PDF hisobot keladi.",
-            reply_markup=watch_kb,
+            "7-kuni yakuniy PDF hisobot keladi." + compare_hint,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         )
     except Exception:
         logger.exception("Kuzatuvni boshlashda xato (user=%s)", uid)
@@ -617,6 +663,72 @@ async def analysis_process(message: Message, state: FSMContext) -> None:
 async def watch_stop(callback: CallbackQuery) -> None:
     had = ws.stop_watch(callback.from_user.id)
     await callback.answer("Kuzatuv to'xtatildi." if had else "Faol kuzatuv yo'q.", show_alert=True)
+
+
+@router.callback_query(F.data == "niche:compare")
+async def niche_compare(callback: CallbackQuery, state: FSMContext) -> None:
+    """Saqlangan yo'nalish tahlillarini yonma-yon taqqoslaydi: reyting + PDF."""
+    uid = callback.from_user.id
+    if not _is_allowed(uid):
+        await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
+        return
+    niches = ns.list_analyses(uid)
+    if len(niches) < 2:
+        await callback.answer(
+            f"Taqqoslash uchun kamida 2 ta yo'nalish tahlili kerak (hozir {len(niches)} ta). "
+            "Boshqa yo'nalishni ham tahlil qiling.", show_alert=True)
+        return
+    ok, _ = _check_limit(uid, "text")
+    if not ok:
+        await _deny_limit(callback, "text")
+        return
+    await callback.answer()
+    await state.clear()
+    waiting = await callback.message.answer(f"📊 {len(niches)} ta yo'nalish taqqoslanmoqda...")
+    try:
+        ranked = ns.rank_niches(niches)
+        facts = {"ranked": [{k: n.get(k) for k in (
+            "rank", "name", "score", "label", "why", "count", "old", "new", "mid", "active_share",
+            "new_avg_views", "old_avg_views", "avg_subs", "uploads_per_week_avg", "dur_avg_all",
+            "shorts_avg", "engagement_avg", "top_hours", "reasons", "warnings")} for n in ranked]}
+        try:
+            ai_text = await compare_niches(facts, telegram_id=uid)
+        except Exception as e:
+            logger.warning("Taqqoslash AI matni yo'q: %s", e)
+            ai_text = "AI tavsiya matni olinmadi. Jadval va reyting to'g'ri."
+        student = callback.from_user.full_name or "O'quvchi"
+        pdf = await asyncio.to_thread(build_niche_comparison, student, ranked, ai_text)
+    except Exception:
+        logger.exception("Yo'nalish taqqoslash xatosi (user=%s)", uid)
+        await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
+        return
+
+    lines = [f"📊 Qaysi yo'nalishga kirsam? ({len(ranked)} ta taqqoslandi)\n"]
+    for n in ranked:
+        emoji = "🟢" if n["score"] >= 70 else ("🟡" if n["score"] >= 45 else "🔴")
+        lines.append(f"{n['rank']}. {emoji} {n['name']} — {n['score']}/100 ({n['label']})\n"
+                     f"    {n['why']}; yangi kanal o'rt. {n.get('new_avg_views', 0):,} ko'rish, faol {n.get('active_share', 0)}%")
+    lines.append("\nTo'liq jadval va AI tavsiyasi — PDF'da 👇\n"
+                 "🤖 Oybek Bozorov AI yordamchisi analiz qildi. AI adashishi mumkin — 100% ishonmang.")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Yana bir yo'nalish tahlili", callback_data="menu:channel_analysis")],
+        [InlineKeyboardButton(text="🗑 Ro'yxatni tozalash", callback_data="niche:clear"),
+         InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="nav:home")],
+    ])
+    await waiting.delete()
+    await callback.message.answer("\n".join(lines))
+    sent = await callback.message.answer_document(
+        BufferedInputFile(pdf, filename=f"yonalishlar_taqqoslash_{datetime.now().strftime('%Y%m%d')}.pdf"),
+        caption="📘 Yo'nalishlarni taqqoslash (PDF)", reply_markup=kb,
+    )
+    log_generation(uid, "channel_analysis", "text", label=f"Taqqoslash — {len(ranked)} yo'nalish",
+                   result_type="file", file_id=sent.document.file_id)
+
+
+@router.callback_query(F.data == "niche:clear")
+async def niche_clear(callback: CallbackQuery) -> None:
+    n = ns.clear_analyses(callback.from_user.id)
+    await callback.answer(f"{n} ta yo'nalish tahlili o'chirildi." if n else "Ro'yxat bo'sh.", show_alert=True)
 
 
 # ============================================================

@@ -58,8 +58,8 @@ def _fmt(n) -> str:
 
 
 class ReportPDF(FPDF):
-    def __init__(self, doc_title: str):
-        super().__init__(orientation="P", unit="mm", format="A4")
+    def __init__(self, doc_title: str, orientation: str = "P"):
+        super().__init__(orientation=orientation, unit="mm", format="A4")
         self.doc_title = doc_title
         self.add_font("dv", "", str(FONT_REG))
         self.add_font("dv", "B", str(FONT_BOLD))
@@ -397,5 +397,66 @@ def build_watch_report(student_name: str, niche_label: str, channel_rows: List[L
     pdf.table(["Kun", "Yangi videolar", "Eng ko'p ko'rilgan", "Obunachi o'sishi"], day_rows,
               widths=[22, 28, 96, 32], size=8)
     pdf.h1("3. Xulosa va tavsiyalar (AI)")
+    pdf.ai_text(ai_text)
+    return bytes(pdf.output())
+
+
+# ============================================================
+# Yo'nalishlarni taqqoslash — "qaysi nishaga kirsam" jadvali
+# ============================================================
+
+def build_niche_comparison(student_name: str, ranked: List[dict], ai_text: str) -> bytes:
+    """ranked — niche_store.rank_niches() natijasi (rank, why bilan). Landshaft A4."""
+    now = datetime.now().strftime("%d.%m.%Y")
+    pdf = ReportPDF("Yo'nalishlarni taqqoslash — YouTube AI kursi", orientation="L")
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    pdf.ln(4)
+    pdf.set_font("dv", "B", 22)
+    pdf.set_text_color(*BLUE)
+    pdf._mc(0, 10, "Qaysi yo'nalishga kirsam? — taqqoslash")
+    pdf.set_text_color(*DARK)
+    pdf.para(f"O'quvchi: {student_name}   ·   Sana: {now}   ·   Yo'nalishlar: {len(ranked)} ta", size=10, color=GRAY)
+
+    top = ranked[0] if ranked else None
+    if top:
+        color = GREEN if top["score"] >= 70 else (YELLOW if top["score"] >= 45 else RED)
+        lines = [f"{n['rank']}. {n['name']} — {n['score']}/100 ({n['label']}): {n['why']}" for n in ranked[:3]]
+        pdf.box("Reyting (metodika bo'yicha)", lines, color=color)
+
+    pdf.h1("1. Yonma-yon jadval")
+    rows = []
+    for n in ranked:
+        rows.append([
+            f"{n['rank']}. {n['name'][:26]}", datetime.fromtimestamp(n["created_at"]).strftime("%d.%m"),
+            f"{n['score']}", n["label"], f"{n['count']} ({n['old']}/{n['new']})", f"{n['active_share']}%",
+            _fmt(n.get("new_avg_views", 0)), _fmt(n.get("old_avg_views", 0)), _fmt(n.get("avg_subs", 0)),
+            f"{n.get('uploads_per_week_avg', 0)}", f"{n.get('dur_avg_all', 0)}", f"{n.get('shorts_avg', 0)}%",
+            f"{n.get('engagement_avg', 0)}%", ", ".join(f"{h:02d}" for h in n.get("top_hours", [])[:3]),
+        ])
+    pdf.table(
+        ["Yo'nalish", "Sana", "Ball", "Xulosa", "Kanal (eski/yangi)", "Faol", "Yangi kanal ko'rish",
+         "Eski kanal ko'rish", "O'rt. obunachi", "Video/hafta", "Davom. daq", "Shorts", "Faollik", "Soat"],
+        rows, widths=[40, 13, 12, 26, 24, 13, 22, 22, 22, 18, 17, 14, 15, 16], size=8,
+    )
+    pdf.para("Ball — yo'nalish salomatligi (aralashma + faollik + yangi kanallar o'sishi). "
+             "«Yangi kanal ko'rish» — yangi kanallarning oxirgi 7 videosi o'rtacha ko'rishi: yangi kirgan o'sa oladimi. "
+             "«Eski kanal ko'rish» qanchalik katta bo'lsa, raqobat shunchalik kuchli. Soat — Toshkent vaqti.",
+             size=8.5, color=GRAY)
+
+    pdf.h1("2. Har yo'nalish bo'yicha")
+    for n in ranked:
+        pdf.h2(f"{n['rank']}. {n['name']} — {n['score']}/100, {n['label']}")
+        for r in n.get("reasons", []):
+            pdf.bullet("+ " + r, size=9.5)
+        for w in n.get("warnings", []):
+            pdf.bullet("! " + w, size=9.5)
+        if n.get("channels"):
+            pdf.para("Kanallar: " + ", ".join(n["channels"][:12]), size=8.5, color=GRAY)
+
+    pdf.add_page()
+    pdf.h1("3. Tavsiya (AI)")
+    pdf.para("AI quyidagi matnni yuqoridagi raqamlar asosida yozdi. Yakuniy qarorni o'zingiz qabul qiling.",
+             size=9, color=GRAY)
     pdf.ai_text(ai_text)
     return bytes(pdf.output())

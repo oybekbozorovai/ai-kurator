@@ -427,24 +427,3 @@ async def daily_watch_comment(facts: dict, telegram_id=None, weekly: bool = Fals
     if text.startswith("⚠️"):
         raise RuntimeError(text)
     return text.strip()
-
-
-async def compare_niches(facts: dict, telegram_id=None) -> str:
-    """Bir nechta yo'nalish tahlilini taqqoslab, qaysi biriga kirish tavsiyasi (300–450 so'z)."""
-    prompt = (
-        "Sen YouTube strateg mentorsan. O'quvchi bir nechta yo'nalishni (nishani) metodika bo'yicha tahlil "
-        "qildi; Python reytingni allaqachon hisoblab bo'ldi (JSON, 'ranked' — 1-o'rin eng yaxshi). "
-        "Vazifang: raqamlarga tayanib, o'quvchiga QAYSI yo'nalishga kirish va nima uchun — tushuntirish.\n"
-        + _COMPETITOR_RULES +
-        "\nFAKTLAR (JSON):\n" + json.dumps(facts, ensure_ascii=False, indent=1) +
-        "\n\nBo'limlar (har biri '## ' bilan):\n"
-        "## Xulosa — qaysi yo'nalish birinchi, nima uchun (2–3 jumla).\n"
-        "## Har yo'nalish bo'yicha — har biriga 2–3 jumla: kuchli va zaif tomoni, kimga mos.\n"
-        "## Yangi boshlovchi uchun tavsiya — aniq qaror va birinchi 3 qadam.\n"
-        "## Ogohlantirish — raqamlar nimani ko'rsatmaydi, nimani o'zi tekshirsin.\n"
-        "Jami 300–450 so'z. Salomlashmasdan boshla."
-    )
-    text = await _generate(prompt, telegram_id=telegram_id, service="niche_compare", model=_model_long)
-    if text.startswith("⚠️"):
-        raise RuntimeError(text)
-    return text.strip()

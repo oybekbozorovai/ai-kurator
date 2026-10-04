@@ -220,6 +220,22 @@ def _allowed_contact(n: str) -> Optional[dict]:
     return rows[0] if rows else None
 
 
+def remove_allowed_phone(phone: str) -> bool:
+    """allowed_contacts'dan telefon raqamni o'chiradi. Topilsa True, yo'q bo'lsa False."""
+    n = normalize_phone(phone)
+    if not n:
+        return False
+    existing = sb.select("allowed_contacts", f"phone=eq.{sb.quote(n)}&select=id&limit=1")
+    if not existing:
+        return False
+    try:
+        sb.delete("allowed_contacts", f"phone=eq.{sb.quote(n)}")
+        return True
+    except sb.SupabaseError as e:
+        logger.error("remove_allowed_phone xato: %s", e)
+        return False
+
+
 def add_allowed_phone(phone: str, cohort_id: Optional[str] = None, first_name: str = "", notes: str = "") -> bool:
     """allowed_contacts'ga yangi telefon raqam qo'shadi. Mavjud bo'lsa False qaytaradi."""
     n = normalize_phone(phone)

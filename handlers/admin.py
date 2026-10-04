@@ -26,6 +26,7 @@ from aiogram.types import (
 from config import ADMIN_USER_IDS, KICK_CHAT_IDS
 from services.auth import (
     add_allowed_phone,
+    remove_allowed_phone,
     add_assistant_admin,
     ban_user,
     free_phone,
@@ -80,8 +81,9 @@ HELP_TEXT = (
     "/list_expiring — yaqin 7 kun ichida muddati tugaydiganlar\n"
     "/usage [kun] — AI iste'mol/xarajat hisoboti (default 30 kun)\n"
     "/usage_user 123456789 [kun] — bitta o'quvchi iste'moli (default 90 kun)\n\n"
-    "Raqam qo'shish:\n"
+    "Raqam boshqarish:\n"
     "/add_phone +998901234567 [Ism] — botga kirish uchun ruxsat berish\n"
+    "/remove_phone +998901234567 — ruxsat ro'yxatidan o'chirish\n"
     "/sync_amocrm — amoCRM WON kontaktlarini avtomatik yuklash\n\n"
     "Boshqaruv:\n"
     "/broadcast — barcha o'quvchilarga e'lon yuborish\n"
@@ -595,6 +597,30 @@ async def cmd_add_phone(message: Message) -> None:
         )
     else:
         await message.answer(f"ℹ️ Bu raqam allaqachon ro'yxatda: {phone}")
+
+
+@router.message(Command("remove_phone"))
+async def cmd_remove_phone(message: Message) -> None:
+    """Ruxsat ro'yxatidan telefon raqamni o'chirish.
+    Ishlatish: /remove_phone +998901234567"""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Ishlatish: /remove_phone +998901234567")
+        return
+    phone = normalize_phone(parts[1])
+    if not phone:
+        await message.answer(f"❌ Noto'g'ri raqam format: {parts[1]}")
+        return
+    removed = await asyncio.to_thread(remove_allowed_phone, phone)
+    if removed:
+        await message.answer(
+            f"✅ Raqam o'chirildi: {phone}\n"
+            "Agar bu raqam bilan ro'yxatdan o'tgan bo'lsa, /free_phone bilan ham ajrating."
+        )
+    else:
+        await message.answer(f"ℹ️ Bu raqam ro'yxatda topilmadi: {phone}")
 
 
 @router.message(Command("sync_amocrm"))

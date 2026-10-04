@@ -220,6 +220,32 @@ def _allowed_contact(n: str) -> Optional[dict]:
     return rows[0] if rows else None
 
 
+def add_allowed_phone(phone: str, cohort_id: Optional[str] = None, first_name: str = "", notes: str = "") -> bool:
+    """allowed_contacts'ga yangi telefon raqam qo'shadi. Mavjud bo'lsa False qaytaradi."""
+    n = normalize_phone(phone)
+    if not n:
+        return False
+    existing = sb.select("allowed_contacts", f"phone=eq.{sb.quote(n)}&select=id&limit=1")
+    if existing:
+        return False
+    try:
+        sb.insert(
+            "allowed_contacts",
+            {
+                "phone": n,
+                "first_name": first_name or None,
+                "role": "student",
+                "cohort_id": cohort_id,
+                "notes": notes or None,
+            },
+            prefer="return=minimal",
+        )
+        return True
+    except sb.SupabaseError as e:
+        logger.error("add_allowed_phone xato: %s", e)
+        return False
+
+
 def approve_user(telegram_id: int, phone: str, first_name: str = "", username: str = "") -> bool:
     """O'quvchini Supabase users'ga bog'laydi (phone + patok). Yangi/yangilangan → True."""
     n = normalize_phone(phone)

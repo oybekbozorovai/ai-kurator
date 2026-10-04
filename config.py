@@ -74,6 +74,14 @@ DAILY_TEXT_LIMIT = int(os.getenv("DAILY_TEXT_LIMIT", "20"))
 # YouTube Data API v3 — kanal analizi uchun (ixtiyoriy; o'rnatilmasa xizmat "tez orada")
 YOUTUBE_API_KEY = _clean(os.getenv("YOUTUBE_API_KEY", ""))
 
+# --- amoCRM (o'quvchi sync uchun) ---
+AMOCRM_SUBDOMAIN = _clean(os.getenv("AMOCRM_SUBDOMAIN", ""))
+AMOCRM_ACCESS_TOKEN = _clean(os.getenv("AMOCRM_ACCESS_TOKEN", ""))
+# WON (to'lov qilingan) status ID'lari — vergul bilan
+AMOCRM_WON_STATUS_IDS = [
+    int(x) for x in re.findall(r"\d+", os.getenv("AMOCRM_WON_STATUS_IDS", "142,85760134,85407790,85407794,85627566"))
+]
+
 # YouTube ishlari tarixi uchun baza
 YT_DB_PATH = BASE_DIR / "data" / "yt.db"
 
@@ -81,11 +89,7 @@ YT_DB_PATH = BASE_DIR / "data" / "yt.db"
 CERT_VERIFY_BASE_URL = _clean(os.getenv("CERT_VERIFY_BASE_URL", "https://youtubeai.uz/sert/"))
 # QR havola oxiriga qo'shiladigan UTM (analitika). Bo'sh bo'lsa qo'shilmaydi.
 CERT_QR_SUFFIX = _clean(os.getenv("CERT_QR_SUFFIX", "?utm_source=sertifikat&utm_medium=qr"))
-# Sertifikat o'quvchi botga (raqami bilan) qo'shilgandan necha kun o'tgach ochiladi.
-# Shu kuni bot o'zi eslatma yuboradi.
 CERT_OPEN_AFTER_DAYS = int(os.getenv("CERT_OPEN_AFTER_DAYS", "80"))
-# Bitta o'quvchi sertifikatni necha marta olishi mumkin (ismdagi xatoni to'g'rilash uchun).
-# Har qayta olishda eski sertifikat bekor bo'lib, yangi ID bilan beriladi.
 CERT_MAX_ISSUES = int(os.getenv("CERT_MAX_ISSUES", "3"))
 COURSE_NAME = _clean(os.getenv("COURSE_NAME", "YouTube AI"))
 CERT_TEMPLATE = BASE_DIR / "assets" / "certificate_template.png"

@@ -25,6 +25,7 @@ from aiogram.types import (
 
 from config import ADMIN_USER_IDS, KICK_CHAT_IDS
 from services.auth import (
+    add_allowed_phone,
     add_assistant_admin,
     ban_user,
     free_phone,
@@ -34,6 +35,7 @@ from services.auth import (
     list_all_user_ids,
     list_approved_users,
     list_assistant_admins,
+    normalize_phone,
     remove_assistant_admin,
     stats,
     unban_user,
@@ -78,7 +80,9 @@ HELP_TEXT = (
     "/list_expiring — yaqin 7 kun ichida muddati tugaydiganlar\n"
     "/usage [kun] — AI iste'mol/xarajat hisoboti (default 30 kun)\n"
     "/usage_user 123456789 [kun] — bitta o'quvchi iste'moli (default 90 kun)\n\n"
-    "ℹ️ Raqamlar A.Y.P.I dashboard orqali patokka qo'shiladi.\n\n"
+    "Raqam qo'shish:\n"
+    "/add_phone +998901234567 [Ism] — botga kirish uchun ruxsat berish\n"
+    "/sync_amocrm — amoCRM WON kontaktlarini avtomatik yuklash\n\n"
     "Boshqaruv:\n"
     "/broadcast — barcha o'quvchilarga e'lon yuborish\n"
     "/list_broadcasts — yuborilgan broadcastlar tarixi\n"
@@ -561,6 +565,57 @@ async def cmd_list_broadcasts(message: Message) -> None:
     for btype, cnt in counts.most_common():
         lines.append(f"• {btype} — {cnt} ta\n  /delete_broadcast {btype}")
     await message.answer("\n".join(lines))
+
+
+@router.message(Command("add_phone"))
+async def cmd_add_phone(message: Message) -> None:
+    """Bot uchun ruxsat ro'yxatiga telefon raqam qo'shish.
+    Ishlatish: /add_phone +998901234567 [Ism]"""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 2:
+        await message.answer(
+            "Ishlatish: /add_phone +998901234567 [Ism]\n"
+            "Misol: /add_phone +998901234567 Jasur"
+        )
+        return
+    raw_phone = parts[1]
+    first_name = parts[2] if len(parts) > 2 else ""
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        await message.answer(f"❌ Noto'g'ri raqam format: {raw_phone}\nMisol: +998901234567")
+        return
+    added = await asyncio.to_thread(add_allowed_phone, phone, None, first_name)
+    if added:
+        await message.answer(
+            f"✅ Raqam qo'shildi: {phone}"
+            + (f" ({first_name})" if first_name else "")
+            + "\nEndi bu raqam bilan bot orqali ro'yxatdan o'tish mumkin."
+        )
+    else:
+        await message.answer(f"ℹ️ Bu raqam allaqachon ro'yxatda: {phone}")
+
+
+@router.message(Command("sync_amocrm"))
+async def cmd_sync_amocrm(message: Message) -> None:
+    """amoCRM WON kontaktlarini allowed_contacts'ga avtomatik yuklash."""
+    if not _is_admin(message.from_user.id):
+        return
+    status = await message.answer("⏳ amoCRM'dan yuklanmoqda...")
+    try:
+        from services.amocrm_sync import sync_won_contacts
+        result = await asyncio.to_thread(sync_won_contacts)
+    except Exception as e:
+        await status.edit_text(f"❌ Xato: {e}")
+        return
+    msg = result.get("message", "")
+    await status.edit_text(
+        f"{'⚠️ ' + msg if msg else '✅ amoCRM sync tugadi'}\n\n"
+        f"• Yangi qo'shildi: {result['added']} ta\n"
+        f"• Allaqachon bor: {result['skipped']} ta\n"
+        f"• Xato: {result['errors']} ta"
+    )
 
 
 @router.message(Command("delete_broadcast"))

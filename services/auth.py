@@ -220,6 +220,143 @@ def _allowed_contact(n: str) -> Optional[dict]:
     return rows[0] if rows else None
 
 
+def _fmt_date(value: Optional[str]) -> str:
+    """'2026-09-01' / ISO → '01.09.2026' (ko'rsatish uchun)."""
+    s = str(value or "")[:10]
+    parts = s.split("-")
+    if len(parts) == 3 and all(parts):
+        return f"{parts[2]}.{parts[1]}.{parts[0]}"
+    return s
+
+
+def get_allowed_phone_status(phone: str) -> Optional[dict]:
+    """allowed_contacts'dagi raqam holati (admin/diagnostika uchun).
+
+    Ro'yxatda bo'lmasa None. Aks holda dict:
+      allowed      — hozir kirishi mumkinmi (is_phone_allowed bilan bir xil mantiq)
+      cohort_id    — biriktirilgan patok (None = patoksiz/cheksiz)
+      cohort_name  — patok nomi ("" bo'lsa patoksiz)
+      ends_at      — patok tugash sanasi (xom), ends_at_text — dd.mm.yyyy
+      expired      — patok muddati o'tgan
+      inactive     — patok is_active=false
+    Bir raqam bir nechta qatorda bo'lsa, ruxsat beruvchi qator ustun.
+    """
+    n = normalize_phone(phone)
+    if not n:
+        return None
+    rows = sb.select(
+        "allowed_contacts",
+        f"phone=eq.{sb.quote(n)}&select=id,first_name,cohort_id,cohort:cohorts(name,ends_at,is_active)",
+    )
+    if not rows:
+        return None
+    now = _now()
+    first = None
+    for r in rows:
+        cohort = r.get("cohort") or {}
+        exp, active = _cohort_expiry(r.get("cohort"))
+        has_cohort = r.get("cohort_id") is not None
+        expired = has_cohort and exp != 0 and now >= exp
+        inactive = has_cohort and not active
+        info = {
+            "phone": n,
+            "first_name": r.get("first_name") or "",
+            "cohort_id": r.get("cohort_id"),
+            "cohort_name": cohort.get("name") or "",
+            "ends_at": cohort.get("ends_at") or "",
+            "ends_at_text": _fmt_date(cohort.get("ends_at")),
+            "expired": expired,
+            "inactive": inactive,
+            "allowed": (not has_cohort) or (active and not expired),
+        }
+        if info["allowed"]:
+            return info
+        if first is None:
+            first = info
+    return first
+
+
+def reactivate_allowed_phone(phone: str) -> bool:
+    """Muddati o'tgan / nofaol patokdagi raqamni patoksiz (cheksiz) qiladi.
+
+    /add_phone shu raqamni yangidan qo'shganda ham cohort_id=None bo'lardi —
+    natija bir xil. Muddat kerak bo'lsa, platformada faol patokka biriktiriladi.
+    """
+    n = normalize_phone(phone)
+    if not n:
+        return False
+    try:
+        sb.update(
+            "allowed_contacts",
+            f"phone=eq.{sb.quote(n)}",
+            {"cohort_id": None},
+            prefer="return=minimal",
+        )
+        return True
+    except sb.SupabaseError as e:
+        logger.error("reactivate_allowed_phone xato: %s", e)
+        return False
+
+
+def find_misassigned_phones() -> List[dict]:
+    """Patok TUGAGANIDAN KEYIN qo'shilgan va hali botga kirmagan raqamlar.
+
+    Bu — platformada yangi o'quvchi tugagan patokka biriktirilgani belgisi
+    (masalan «Iyun 2026» 01.09.2026 da tugagan, lekin oktabrda ham unga
+    qo'shilgan). Bunday raqam botga kira olmaydi. Eski (muddati chiqqan,
+    lekin o'z vaqtida qo'shilgan) o'quvchilar bu ro'yxatga KIRMAYDI.
+    """
+    cohorts = {c["id"]: c for c in sb.select("cohorts", "select=id,name,ends_at,is_active")}
+    out: List[dict] = []
+    offset = 0
+    while True:
+        page = sb.select(
+            "allowed_contacts",
+            "select=id,phone,cohort_id,invited_at,used_at"
+            "&cohort_id=not.is.null&used_at=is.null"
+            f"&order=invited_at.asc&limit=1000&offset={offset}",
+        )
+        for r in page:
+            c = cohorts.get(r.get("cohort_id"))
+            if not c or not c.get("ends_at"):
+                continue
+            invited = str(r.get("invited_at") or "")[:10]
+            ends = str(c["ends_at"])[:10]
+            if invited and invited > ends:
+                out.append({
+                    "id": r["id"],
+                    "phone": r.get("phone") or "",
+                    "cohort_name": c.get("name") or "",
+                    "ends_at_text": _fmt_date(ends),
+                    "invited_at_text": _fmt_date(invited),
+                })
+        if len(page) < 1000:
+            break
+        offset += 1000
+    return out
+
+
+def reactivate_misassigned_phones() -> Tuple[int, int]:
+    """find_misassigned_phones() natijasini patoksiz (cheksiz) qiladi.
+    (muvaffaqiyatli, jami) qaytaradi."""
+    rows = find_misassigned_phones()
+    ok = 0
+    chunk = 50
+    for i in range(0, len(rows), chunk):
+        ids = [r["id"] for r in rows[i:i + chunk]]
+        try:
+            sb.update(
+                "allowed_contacts",
+                "id=in.(" + ",".join(ids) + ")",
+                {"cohort_id": None},
+                prefer="return=minimal",
+            )
+            ok += len(ids)
+        except sb.SupabaseError as e:
+            logger.error("reactivate_misassigned_phones xato (%d ta): %s", len(ids), e)
+    return ok, len(rows)
+
+
 def remove_allowed_phone(phone: str) -> bool:
     """allowed_contacts'dan telefon raqamni o'chiradi. Topilsa True, yo'q bo'lsa False."""
     n = normalize_phone(phone)

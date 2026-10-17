@@ -38,10 +38,17 @@ Bot **telefon raqami** orqali tanidi. Siz raqamni ro'yxatga qo'shasiz → o'quvc
 
 ### Bitta raqam
 ```
-/add_phone +998901234567          → 4 oy (default)
-/add_phone +998901234567 6        → 6 oy
-/add_phone +998901234567 0        → cheksiz
+/add_phone +998901234567          → raqam qo'shiladi (patoksiz, cheksiz)
+/add_phone +998901234567 Jasur    → ism bilan
 ```
+
+Raqam allaqachon ro'yxatda bo'lsa, bot uning holatini aytadi:
+- **faol** — hech narsa o'zgarmaydi, patok va muddati ko'rsatiladi;
+- **patok muddati tugagan / nofaol** — bot patokni olib tashlaydi (♻️), o'quvchi raqamini
+  qayta yuborsa kiradi. Muddat kerak bo'lsa, platformada faol patokka biriktiring.
+
+Platformada o'quvchini qo'shganda **faol patokni** tanlang: tugagan patokka (masalan
+«Iyun 2026») qo'shilgan raqam botga kira olmaydi va o'quvchiga «patok muddati tugagan» deyiladi.
 
 ### Ko'p raqam (fayl bilan)
 `.txt` yoki `.csv` faylga raqamlarni yozing (har qatorga bitta), faylni botga yuboring va **izoh (caption)** ga:
@@ -107,8 +114,9 @@ Raqam qo'shsangiz → darhol `/list_phones` da ko'rinadi. `/list_users` da esa f
 - `/list_expiring` — muddati tugayotganlar (7 kun)
 
 **Telefon ro'yxati:**
-- `/add_phone +998901234567 [oy]` — bitta raqam qo'shish
+- `/add_phone +998901234567 [Ism]` — bitta raqam qo'shish (tugagan patokdagi raqamni qayta faollashtiradi)
 - `/remove_phone +998901234567` — raqamni o'chirish
+- `/fix_expired_phones` — tugagan patokka xato qo'shilgan (botga kirmagan) raqamlarni ko'rsatadi; `/fix_expired_phones tasdiq` — hammasini patoksiz qiladi
 - `/upload_phones` (fayl + caption) — ko'p raqam
 - `/free_phone +998901234567` — raqamni bo'shatish (akkount almashtirish)
 

@@ -26,6 +26,10 @@ from aiogram.types import (
 from config import ADMIN_USER_IDS, KICK_CHAT_IDS
 from services.auth import (
     add_allowed_phone,
+    find_misassigned_phones,
+    get_allowed_phone_status,
+    reactivate_allowed_phone,
+    reactivate_misassigned_phones,
     remove_allowed_phone,
     add_assistant_admin,
     ban_user,
@@ -588,15 +592,86 @@ async def cmd_add_phone(message: Message) -> None:
     if not phone:
         await message.answer(f"❌ Noto'g'ri raqam format: {raw_phone}\nMisol: +998901234567")
         return
-    added = await asyncio.to_thread(add_allowed_phone, phone, None, first_name)
-    if added:
+    status = await asyncio.to_thread(get_allowed_phone_status, phone)
+
+    # 1) Ro'yxatda yo'q — yangidan qo'shamiz (patoksiz = cheksiz)
+    if status is None:
+        added = await asyncio.to_thread(add_allowed_phone, phone, None, first_name)
+        if added:
+            await message.answer(
+                f"✅ Raqam qo'shildi: {phone}"
+                + (f" ({first_name})" if first_name else "")
+                + "\nEndi bu raqam bilan bot orqali ro'yxatdan o'tish mumkin."
+            )
+        else:
+            await message.answer(
+                f"❌ Raqamni qo'shib bo'lmadi: {phone}\nSupabase xatosi — loglarni tekshiring."
+            )
+        return
+
+    patok = status["cohort_name"] or "yo'q (cheksiz)"
+    muddat = f" (muddati: {status['ends_at_text']})" if status["ends_at"] else ""
+
+    # 2) Ro'yxatda bor va faol — hech narsa qilmaymiz
+    if status["allowed"]:
         await message.answer(
-            f"✅ Raqam qo'shildi: {phone}"
-            + (f" ({first_name})" if first_name else "")
-            + "\nEndi bu raqam bilan bot orqali ro'yxatdan o'tish mumkin."
+            f"ℹ️ Bu raqam allaqachon ro'yxatda va faol: {phone}\nPatok: {patok}{muddat}"
+        )
+        return
+
+    # 3) Ro'yxatda bor, lekin patok muddati o'tgan yoki nofaol — shuning uchun
+    #    o'quvchi "ro'yxatda topilmadi" olardi. Patokni olib tashlaymiz.
+    if status["expired"]:
+        sabab = f"«{status['cohort_name']}» patoki {status['ends_at_text']} da tugagan"
+    else:
+        sabab = f"«{status['cohort_name']}» patoki nofaol"
+    ok = await asyncio.to_thread(reactivate_allowed_phone, phone)
+    if ok:
+        logger.info("Raqam qayta faollashtirildi: %s (%s)", phone, sabab)
+        await message.answer(
+            f"♻️ Raqam ro'yxatda bor edi, lekin {sabab} — shuning uchun o'quvchi kira olmayotgan edi.\n"
+            f"Patok olib tashlandi (endi cheksiz). O'quvchi raqamini qayta yuborsa, kiradi.\n"
+            f"Muddat kerak bo'lsa — platformada faol patokka biriktiring."
         )
     else:
-        await message.answer(f"ℹ️ Bu raqam allaqachon ro'yxatda: {phone}")
+        await message.answer(
+            f"❌ Raqam ro'yxatda bor, lekin {sabab}. Yangilab bo'lmadi (Supabase xatosi) — loglarni tekshiring."
+        )
+
+
+@router.message(Command("fix_expired_phones"))
+async def cmd_fix_expired_phones(message: Message) -> None:
+    """Tugagan patokka (xato) qo'shilgan, hali botga kirmagan raqamlarni patoksiz qiladi.
+    /fix_expired_phones         → faqat ko'rib chiqish
+    /fix_expired_phones tasdiq  → bajarish"""
+    if not _is_admin(message.from_user.id):
+        return
+    from collections import Counter
+
+    parts = (message.text or "").split(maxsplit=1)
+    confirm = len(parts) > 1 and parts[1].strip().lower() == "tasdiq"
+    status = await message.answer("⏳ Tekshirilmoqda...")
+    rows = await asyncio.to_thread(find_misassigned_phones)
+    if not rows:
+        await status.edit_text("✅ Tugagan patokka xato qo'shilgan (botga kirmagan) raqam yo'q.")
+        return
+    per = Counter((r["cohort_name"], r["ends_at_text"]) for r in rows)
+    lines = "\n".join(f"• «{name}» (tugagan {ends}): {n} ta" for (name, ends), n in per.most_common())
+    if not confirm:
+        await status.edit_text(
+            f"🔎 Patok tugaganidan KEYIN qo'shilgan, hali botga kirmagan raqamlar: {len(rows)} ta\n{lines}\n\n"
+            "Bu o'quvchilar hozir «patok muddati tugagan» javobini oladi.\n"
+            "Hammasini patoksiz (cheksiz) qilish uchun: /fix_expired_phones tasdiq\n"
+            "Muddat kerak bo'lsa — platformada faol patokka o'tkazing."
+        )
+        return
+    ok, total = await asyncio.to_thread(reactivate_misassigned_phones)
+    logger.info("fix_expired_phones: %d/%d raqam patokdan ajratildi (admin id=%s)", ok, total, message.from_user.id)
+    await status.edit_text(
+        f"♻️ {ok}/{total} ta raqam patokdan ajratildi (endi cheksiz).\n{lines}\n\n"
+        "O'quvchilar raqamini botga qayta yuborsa, kiradi."
+        + ("" if ok == total else "\n⚠️ Ba'zilari yangilanmadi — loglarni tekshiring.")
+    )
 
 
 @router.message(Command("remove_phone"))

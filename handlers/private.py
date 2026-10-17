@@ -25,10 +25,10 @@ from services.auth import (
     approve_user,
     disable_reminders,
     enable_reminders,
+    get_allowed_phone_status,
     get_phone_owner,
     is_admin,
     is_banned,
-    is_phone_allowed,
     is_user_approved,
     normalize_phone,
 )
@@ -76,6 +76,12 @@ NOT_ALLOWED_TEXT = (
     "❌ Bu raqam kurs ro'yxatida topilmadi.\n\n"
     "• Raqamni xato yozgan bo'lsangiz — qaytadan to'g'ri yozing (masalan: +998901234567 yoki 901234567).\n"
     "• Kursni xarid qilganingizga ishonchingiz komil bo'lsa — ustozga murojaat qiling."
+)
+
+EXPIRED_TEXT = (
+    "⏳ Bu raqam kurs ro'yxatida bor, lekin biriktirilgan patok{patok} muddati tugagan{sana}.\n\n"
+    "• Kursni endigina xarid qilgan bo'lsangiz yoki muddatni uzaytirmoqchi bo'lsangiz — "
+    "ustozga murojaat qiling, u raqamingizni qayta faollashtiradi."
 )
 
 ALREADY_USED_TEXT = (
@@ -142,9 +148,22 @@ async def _process_phone(message: Message, state: FSMContext, raw_phone: str) ->
 
     phone = normalize_phone(raw_phone)
 
-    if not is_phone_allowed(phone):
+    status = get_allowed_phone_status(phone)
+    if status is None:
         await message.answer(NOT_ALLOWED_TEXT)
         logger.info("Ruxsat etilmagan raqam: %s (id=%s)", phone, message.from_user.id)
+        return
+    if not status["allowed"]:
+        # Raqam ro'yxatda bor, lekin patok muddati o'tgan / nofaol — "topilmadi"
+        # deyish adminni chalg'itadi, shuning uchun sababni aniq aytamiz.
+        await message.answer(EXPIRED_TEXT.format(
+            patok=f" («{status['cohort_name']}»)" if status["cohort_name"] else "",
+            sana=f" ({status['ends_at_text']})" if status["expired"] and status["ends_at"] else "",
+        ))
+        logger.info(
+            "Patok muddati o'tgan raqam: %s (id=%s, patok=%r, ends_at=%s, nofaol=%s)",
+            phone, message.from_user.id, status["cohort_name"], status["ends_at"], status["inactive"],
+        )
         return
 
     owner = get_phone_owner(phone)

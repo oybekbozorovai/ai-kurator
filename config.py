@@ -85,6 +85,8 @@ COHORT_EXPIRY_ENFORCED = _clean(os.getenv("COHORT_EXPIRY_ENFORCED", "0")).lower(
 AMOCRM_SUBDOMAIN = _clean(os.getenv("AMOCRM_SUBDOMAIN", ""))
 AMOCRM_ACCESS_TOKEN = _clean(os.getenv("AMOCRM_ACCESS_TOKEN", ""))
 # WON (to'lov qilingan) status ID'lari — vergul bilan
+# Avtomatik sync oralig'i (soniya). 0 — avtomatik sync o'chiq (faqat /sync_amocrm qo'lda).
+AMOCRM_SYNC_INTERVAL = int(os.getenv("AMOCRM_SYNC_INTERVAL", "3600"))
 AMOCRM_WON_STATUS_IDS = [
     int(x) for x in re.findall(r"\d+", os.getenv("AMOCRM_WON_STATUS_IDS", "142,85760134,85407790,85407794,85627566"))
 ]

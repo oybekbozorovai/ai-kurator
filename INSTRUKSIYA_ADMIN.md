@@ -119,6 +119,7 @@ Raqam qo'shsangiz → darhol `/list_phones` da ko'rinadi. `/list_users` da esa f
 - `/add_phone +998901234567 [Ism]` — bitta raqam qo'shish (tugagan patokdagi raqamni qayta faollashtiradi)
 - `/remove_phone +998901234567` — raqamni o'chirish
 - `/fix_expired_phones` — tugagan patokka xato qo'shilgan (botga kirmagan) raqamlarni ko'rsatadi; `/fix_expired_phones tasdiq` — hammasini patoksiz qiladi
+- `/sync_amocrm` — amoCRM WON bosqichidagi raqamlarni darhol qo'shish. **Avtomatik ham ishlaydi:** bot har soatda (va ishga tushganda) o'zi sync qiladi, yangi raqam qo'shilsa adminga xabar beradi. O'chirish: Railway'da `AMOCRM_SYNC_INTERVAL=0`. amoCRM sozlamalari: `AMOCRM_SUBDOMAIN`, `AMOCRM_ACCESS_TOKEN`, `AMOCRM_WON_STATUS_IDS`
 - `/upload_phones` (fayl + caption) — ko'p raqam
 - `/free_phone +998901234567` — raqamni bo'shatish (akkount almashtirish)
 

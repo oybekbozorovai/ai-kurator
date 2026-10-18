@@ -87,7 +87,9 @@ def sync_won_contacts(cohort_id: Optional[str] = None) -> dict:
     if not AMOCRM_SUBDOMAIN or not AMOCRM_ACCESS_TOKEN:
         return {"added": 0, "skipped": 0, "errors": 1, "message": "AMOCRM_SUBDOMAIN yoki AMOCRM_ACCESS_TOKEN set qilinmagan"}
 
-    existing = {r["phone"] for r in sb.select("allowed_contacts", "select=phone")}
+    # DIQQAT: sb.select faqat 1000 qator qaytaradi (PostgREST chegarasi) — jadvalda 3000+ raqam bor,
+    # shuning uchun hammasini olamiz, aks holda mavjud raqamlar qayta qo'shilishga urinadi.
+    existing = {r["phone"] for r in sb.select_all("allowed_contacts", "select=phone")}
 
     contact_ids = _get_won_contact_ids()
     phones = _get_phones_from_contacts(contact_ids)

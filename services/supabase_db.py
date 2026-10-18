@@ -64,6 +64,21 @@ def select(table: str, query: str = "") -> list:
         return []
 
 
+def select_all(table: str, query: str = "", page: int = 1000) -> list:
+    """SELECT — PostgREST'ning 1000 qatorlik chegarasini offset bilan aylanib o'tib HAMMASINI oladi.
+    (`select` faqat birinchi 1000 qatorni qaytaradi — katta jadvallarda shu funksiyani ishlating.)"""
+    out: list = []
+    offset = 0
+    while True:
+        sep = "&" if query else ""
+        rows = select(table, f"{query}{sep}limit={int(page)}&offset={offset}")
+        out.extend(rows)
+        if len(rows) < page:
+            break
+        offset += page
+    return out
+
+
 def insert(table: str, row: dict, prefer: str = "return=representation") -> list:
     return request("POST", table, body=row, prefer=prefer)
 

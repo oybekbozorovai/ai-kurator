@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import TELEGRAM_BOT_TOKEN
 from handlers import admin, certificate, group, private, support, youtube
 from services.scheduler import (
+    amocrm_sync_loop,
     competitor_watch_loop,
     kick_expired_loop,
     support_notifier_loop,
@@ -59,6 +60,10 @@ async def main() -> None:
     # Raqobatchi kanallar 7 kunlik kuzatuvi — har kuni 09:00 (Toshkent)
     _spawn(competitor_watch_loop(bot))
     logger.info("Raqobatchi kuzatuv scheduler ishga tushirildi")
+
+    # amoCRM WON kontaktlarini avtomat ro'yxatga qo'shish — har soatda (ishga tushganda darhol)
+    _spawn(amocrm_sync_loop(bot))
+    logger.info("amoCRM auto-sync scheduler ishga tushirildi")
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

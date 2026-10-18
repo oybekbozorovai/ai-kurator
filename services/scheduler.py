@@ -11,7 +11,15 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import CERT_MAX_ISSUES, CERT_OPEN_AFTER_DAYS, KICK_CHAT_IDS
+from config import (
+    ADMIN_USER_IDS,
+    AMOCRM_ACCESS_TOKEN,
+    AMOCRM_SUBDOMAIN,
+    AMOCRM_SYNC_INTERVAL,
+    CERT_MAX_ISSUES,
+    CERT_OPEN_AFTER_DAYS,
+    KICK_CHAT_IDS,
+)
 from handlers.utils import safe_send, split_for_telegram
 from services.auth import (
     get_expired_users,
@@ -66,6 +74,42 @@ WARN_MESSAGE = (
     "💰 Narxi: 490 000 so'm\n\n"
     "Botda qolishni uzaytirish uchun +9985551101031 qabul bo'limiga murojaat qiling."
 )
+
+
+async def amocrm_sync_loop(bot: Bot) -> None:
+    """amoCRM WON bosqichidagi kontaktlar raqamini har AMOCRM_SYNC_INTERVAL soniyada
+    allowed_contacts'ga qo'shadi. Ishga tushganda darhol, keyin davriy.
+    Yangi raqam qo'shilsa — adminlarga xabar; xato bo'lsa — bir marta xabar (tuzalguncha takrorlamaydi)."""
+    if AMOCRM_SYNC_INTERVAL <= 0 or not (AMOCRM_SUBDOMAIN and AMOCRM_ACCESS_TOKEN):
+        logger.info("amoCRM auto-sync o'chiq (AMOCRM_SYNC_INTERVAL=0 yoki subdomain/token yo'q)")
+        return
+    from services.amocrm_sync import sync_won_contacts
+
+    error_notified = False
+    while True:
+        try:
+            result = await asyncio.to_thread(sync_won_contacts)
+            added, skipped, errors = result.get("added", 0), result.get("skipped", 0), result.get("errors", 0)
+            msg = result.get("message", "")
+            logger.info("amoCRM auto-sync: yangi=%d, bor=%d, xato=%d%s", added, skipped, errors, f" ({msg})" if msg else "")
+            if added or (errors and not error_notified):
+                text = (
+                    "♻️ amoCRM auto-sync\n"
+                    f"• Yangi qo'shildi: {added} ta\n"
+                    f"• Allaqachon bor: {skipped} ta\n"
+                    f"• Xato: {errors} ta"
+                    + (f"\n⚠️ {msg}" if msg else "")
+                )
+                for admin_id in sorted(ADMIN_USER_IDS):
+                    await safe_send(bot, admin_id, text)
+            error_notified = bool(errors)
+        except Exception as e:
+            logger.exception("amoCRM auto-sync xatolik: %s", e)
+            if not error_notified:
+                for admin_id in sorted(ADMIN_USER_IDS):
+                    await safe_send(bot, admin_id, f"⚠️ amoCRM auto-sync xatolik: {e}\nKeyingi urinish {AMOCRM_SYNC_INTERVAL // 60} daqiqadan keyin.")
+                error_notified = True
+        await asyncio.sleep(AMOCRM_SYNC_INTERVAL)
 
 
 async def kick_expired_loop(bot: Bot) -> None:

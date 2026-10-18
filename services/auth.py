@@ -388,7 +388,7 @@ def add_allowed_phone(phone: str, cohort_id: Optional[str] = None, first_name: s
             "allowed_contacts",
             {
                 "phone": n,
-                "first_name": first_name or None,
+                "first_name": first_name or "",  # ustun NOT NULL — null yuborilsa 400
                 "role": "student",
                 "cohort_id": cohort_id,
                 "notes": notes or None,

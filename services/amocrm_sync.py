@@ -104,10 +104,13 @@ def _get_phones_from_contacts(contact_ids: list[int]) -> list[dict]:
                     for val in field.get("values", []):
                         phone = normalize_phone(str(val.get("value", "")))
                         if phone:
+                            # allowed_contacts.first_name NOT NULL — amoCRM'da first_name bo'sh bo'lsa
+                            # umumiy `name` dan olamiz; u ham bo'sh bo'lsa "" (null emas).
+                            first = (c.get("first_name") or "").strip() or (c.get("name") or "").strip()
                             results.append({
                                 "phone": phone,
-                                "first_name": c.get("first_name", "") or "",
-                                "last_name": c.get("last_name", "") or "",
+                                "first_name": first,
+                                "last_name": (c.get("last_name") or "").strip(),
                             })
     return results
 
@@ -141,7 +144,7 @@ def sync_won_contacts(cohort_id: Optional[str] = None) -> dict:
                 "allowed_contacts",
                 {
                     "phone": phone,
-                    "first_name": p["first_name"] or None,
+                    "first_name": p["first_name"] or "",   # ustun NOT NULL
                     "last_name": p["last_name"] or None,
                     "role": "student",
                     "cohort_id": cohort_id,

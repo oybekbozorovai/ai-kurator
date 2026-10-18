@@ -24,13 +24,38 @@ def _amo_get(path: str, params: dict) -> dict:
         return json.loads(resp.read().decode())
 
 
+MAX_PAGES = 200  # himoya: 200 × 250 = 50 000 lead — undan ko'p bo'lsa to'xtab, ogohlantiradi
+
+
+def _won_status_pipelines() -> dict[int, int]:
+    """WON status_id → pipeline_id. amoCRM `filter[statuses]` ni pipeline_id'SIZ E'TIBORSIZ qoldiradi
+    (hamma lidlarni qaytaradi!) — shuning uchun pipeline_id majburiy."""
+    data = _amo_get("/leads/pipelines", {})
+    out: dict[int, int] = {}
+    for p in data.get("_embedded", {}).get("pipelines", []):
+        for st in p.get("_embedded", {}).get("statuses", []):
+            sid = int(st.get("id", 0))
+            if sid in AMOCRM_WON_STATUS_IDS:
+                out[sid] = int(p["id"])
+    missing = [sid for sid in AMOCRM_WON_STATUS_IDS if sid not in out]
+    if missing:
+        logger.warning("amoCRM: bu WON status ID'lar hech bir voronkada topilmadi: %s", missing)
+    return out
+
+
 def _get_won_contact_ids() -> list[int]:
     """WON statusdagi barcha leads'lardan contact_id'larni yig'adi."""
+    pipe_of = _won_status_pipelines()
+    if not pipe_of:
+        raise RuntimeError("amoCRM: birorta WON status voronkada topilmadi — AMOCRM_WON_STATUS_IDS ni tekshiring")
+    want = set(pipe_of)
     contact_ids: list[int] = []
+    seen: set[int] = set()
     page = 1
     while True:
         params: dict = {"page": page, "limit": 250, "with": "contacts"}
-        for i, sid in enumerate(AMOCRM_WON_STATUS_IDS):
+        for i, sid in enumerate(sorted(pipe_of)):
+            params[f"filter[statuses][{i}][pipeline_id]"] = pipe_of[sid]
             params[f"filter[statuses][{i}][status_id]"] = sid
         try:
             data = _amo_get("/leads", params)
@@ -42,13 +67,21 @@ def _get_won_contact_ids() -> list[int]:
         if not leads:
             break
         for lead in leads:
+            # Ikkinchi himoya: filtr ishlamay qolsa ham faqat WON bosqichdagilar
+            if int(lead.get("status_id", 0)) not in want:
+                continue
             for c in lead.get("_embedded", {}).get("contacts", []):
                 cid = c.get("id")
-                if cid and cid not in contact_ids:
+                if cid and int(cid) not in seen:
+                    seen.add(int(cid))
                     contact_ids.append(int(cid))
         if len(leads) < 250:
             break
         page += 1
+        if page > MAX_PAGES:
+            logger.warning("amoCRM: %d sahifadan keyin to'xtatildi (MAX_PAGES)", MAX_PAGES)
+            break
+    logger.info("amoCRM: %d sahifa, %d WON kontakt", page, len(contact_ids))
     return contact_ids
 
 

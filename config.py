@@ -74,6 +74,13 @@ DAILY_TEXT_LIMIT = int(os.getenv("DAILY_TEXT_LIMIT", "20"))
 # YouTube Data API v3 — kanal analizi uchun (ixtiyoriy; o'rnatilmasa xizmat "tez orada")
 YOUTUBE_API_KEY = _clean(os.getenv("YOUTUBE_API_KEY", ""))
 
+# --- Patok (cohort) muddati botda tekshirilsinmi ---
+# "0" (default): bot patokka QARAMAYDI — allowed_contacts'dagi har qanday raqam kiradi,
+#   ro'yxatdan o'tganlar muddatsiz, muddat eslatmalari va auto-kick o'chiq.
+#   (Platforma yangi o'quvchilarni tugagan patokka qo'shib yuborgani uchun, 2026-10-18.)
+# "1": eski rejim — patok ends_at / is_active tekshiriladi.
+COHORT_EXPIRY_ENFORCED = _clean(os.getenv("COHORT_EXPIRY_ENFORCED", "0")).lower() in ("1", "true", "yes", "ha")
+
 # --- amoCRM (o'quvchi sync uchun) ---
 AMOCRM_SUBDOMAIN = _clean(os.getenv("AMOCRM_SUBDOMAIN", ""))
 AMOCRM_ACCESS_TOKEN = _clean(os.getenv("AMOCRM_ACCESS_TOKEN", ""))

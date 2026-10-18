@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
-from config import ADMIN_USER_IDS, BASE_DIR
+from config import ADMIN_USER_IDS, BASE_DIR, COHORT_EXPIRY_ENFORCED
 from services import supabase_db as sb
 
 logger = logging.getLogger(__name__)
@@ -188,6 +188,8 @@ def is_phone_allowed(phone: str) -> bool:
     )
     if not rows:
         return False
+    if not COHORT_EXPIRY_ENFORCED:  # ro'yxatda bor — yetarli (patok tekshirilmaydi)
+        return True
     now = _now()
     for r in rows:
         exp, active = _cohort_expiry(r.get("cohort"))
@@ -267,7 +269,7 @@ def get_allowed_phone_status(phone: str) -> Optional[dict]:
             "ends_at_text": _fmt_date(cohort.get("ends_at")),
             "expired": expired,
             "inactive": inactive,
-            "allowed": (not has_cohort) or (active and not expired),
+            "allowed": (not COHORT_EXPIRY_ENFORCED) or (not has_cohort) or (active and not expired),
         }
         if info["allowed"]:
             return info
@@ -490,6 +492,8 @@ def _compute_is_user_approved(telegram_id: int) -> bool:
     role = (row.get("role") or "").lower()
     if role in ADMIN_ROLES:
         return True
+    if not COHORT_EXPIRY_ENFORCED:  # raqam bog'langan — yetarli
+        return True
     exp, active = _cohort_expiry(row.get("cohort"))
     if row.get("cohort_id") is None:
         return True
@@ -513,7 +517,7 @@ def get_user_info(telegram_id: int) -> Optional[Dict]:
     row = _user_row(telegram_id)
     if not row:
         return None
-    exp, _ = _cohort_expiry(row.get("cohort"))
+    exp, _ = _cohort_expiry(row.get("cohort")) if COHORT_EXPIRY_ENFORCED else (0, True)
     return {
         "telegram_id": int(row["telegram_id"]),
         "phone": _strip_plus(row.get("phone")),
@@ -570,7 +574,7 @@ def _registered_users() -> List[dict]:
 def list_approved_users(limit: int = 200) -> List[Tuple]:
     out: List[Tuple] = []
     for r in _registered_users()[:limit]:
-        exp, _ = _cohort_expiry(r.get("cohort"))
+        exp, _ = _cohort_expiry(r.get("cohort")) if COHORT_EXPIRY_ENFORCED else (0, True)
         out.append((
             int(r["telegram_id"]),
             _strip_plus(r.get("phone")),
@@ -591,7 +595,7 @@ def list_allowed_phones(limit: int = 500) -> List[Tuple]:
     )
     out: List[Tuple] = []
     for r in rows:
-        exp = _date_to_ts((r.get("cohort") or {}).get("ends_at"))
+        exp = _date_to_ts((r.get("cohort") or {}).get("ends_at")) if COHORT_EXPIRY_ENFORCED else 0
         out.append((_strip_plus(r.get("phone")), exp, 1 if r.get("used_at") else 0))
     return out
 
@@ -609,6 +613,8 @@ def list_all_user_ids() -> List[int]:
 def get_expired_users() -> List[Tuple]:
     """Chiqarilishi kerak bo'lganlar: patok muddati o'tgan YOKI patok o'chirilgan (is_active=false).
     is_user_approved ham shu ikkalasida kirishni rad etadi — moslik uchun ikkalasini chiqaramiz."""
+    if not COHORT_EXPIRY_ENFORCED:
+        return []
     now = _now()
     out: List[Tuple] = []
     for r in _registered_users():
@@ -624,6 +630,8 @@ def get_expired_users() -> List[Tuple]:
 
 def get_expiring_soon(days: int = 7) -> List[Tuple]:
     """Yaqin N kun ichida muddati tugaydiganlar (expires_at bo'yicha o'sib)."""
+    if not COHORT_EXPIRY_ENFORCED:
+        return []
     now = _now()
     soon = now + days * 24 * 3600
     out: List[Tuple] = []
@@ -641,6 +649,8 @@ def get_expiring_soon(days: int = 7) -> List[Tuple]:
 def get_users_to_warn(days: int = 3) -> List[Tuple]:
     """Muddati `days` kun ichida tugaydigan, shu muddat uchun hali ogohlantirilmaganlar.
     Patok uzaytirilsa (exp o'zgarsa) — qayta ogohlantiriladi."""
+    if not COHORT_EXPIRY_ENFORCED:
+        return []
     now = _now()
     deadline = now + days * 24 * 3600
     with _lock, sqlite3.connect(DB_PATH) as c:
@@ -816,7 +826,7 @@ def stats() -> Dict[str, int]:
     allowed = sb.select("allowed_contacts", "select=phone")
     registered = _registered_users()
     expired_pending = 0
-    for r in registered:
+    for r in registered if COHORT_EXPIRY_ENFORCED else []:
         if (r.get("role") or "").lower() in ADMIN_ROLES or r.get("cohort_id") is None:
             continue
         exp, _active = _cohort_expiry(r.get("cohort"))

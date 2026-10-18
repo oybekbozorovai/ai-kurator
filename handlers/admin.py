@@ -23,7 +23,7 @@ from aiogram.types import (
     Message,
 )
 
-from config import ADMIN_USER_IDS, KICK_CHAT_IDS
+from config import ADMIN_USER_IDS, COHORT_EXPIRY_ENFORCED, KICK_CHAT_IDS
 from services.auth import (
     add_allowed_phone,
     find_misassigned_phones,
@@ -660,8 +660,10 @@ async def cmd_fix_expired_phones(message: Message) -> None:
     if not confirm:
         await status.edit_text(
             f"🔎 Patok tugaganidan KEYIN qo'shilgan, hali botga kirmagan raqamlar: {len(rows)} ta\n{lines}\n\n"
-            "Bu o'quvchilar hozir «patok muddati tugagan» javobini oladi.\n"
-            "Hammasini patoksiz (cheksiz) qilish uchun: /fix_expired_phones tasdiq\n"
+            + ("Bu o'quvchilar hozir «patok muddati tugagan» javobini oladi.\n"
+               if COHORT_EXPIRY_ENFORCED else
+               "Patok tekshiruvi hozir O'CHIQ (COHORT_EXPIRY_ENFORCED=0) — bu raqamlar allaqachon kira oladi, tozalash ixtiyoriy.\n")
+            + "Hammasini patoksiz (cheksiz) qilish uchun: /fix_expired_phones tasdiq\n"
             "Muddat kerak bo'lsa — platformada faol patokka o'tkazing."
         )
         return

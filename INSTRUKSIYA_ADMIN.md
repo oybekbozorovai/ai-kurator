@@ -47,8 +47,10 @@ Raqam allaqachon ro'yxatda bo'lsa, bot uning holatini aytadi:
 - **patok muddati tugagan / nofaol** — bot patokni olib tashlaydi (♻️), o'quvchi raqamini
   qayta yuborsa kiradi. Muddat kerak bo'lsa, platformada faol patokka biriktiring.
 
-Platformada o'quvchini qo'shganda **faol patokni** tanlang: tugagan patokka (masalan
-«Iyun 2026») qo'shilgan raqam botga kira olmaydi va o'quvchiga «patok muddati tugagan» deyiladi.
+**Patok tekshiruvi (2026-10-18 dan) O'CHIQ:** bot patokka qaramaydi — ro'yxatdagi har qanday
+raqam kiradi, muddat eslatmalari va auto-kick ishlamaydi. Eski rejimga qaytish uchun Railway'da
+`COHORT_EXPIRY_ENFORCED=1` qo'ying (shunda tugagan patokdagi raqam kira olmaydi va yuqoridagi
+«patok muddati tugagan» xabari ishlaydi).
 
 ### Ko'p raqam (fayl bilan)
 `.txt` yoki `.csv` faylga raqamlarni yozing (har qatorga bitta), faylni botga yuboring va **izoh (caption)** ga:

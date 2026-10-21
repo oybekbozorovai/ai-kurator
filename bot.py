@@ -6,7 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN
-from handlers import admin, certificate, group, private, support, youtube
+from handlers import admin, certificate, fallback, group, private, support, youtube
 from services import alerts
 from services.scheduler import (
     amocrm_sync_loop,
@@ -46,6 +46,7 @@ async def main() -> None:
     dp.include_router(support.router)
     dp.include_router(private.router)
     dp.include_router(group.router)
+    dp.include_router(fallback.router)  # eng oxirida: ushlanmagan callback'larga javob
 
     me = await bot.get_me()
     logger.info("Bot ishga tushdi: @%s (id=%s)", me.username, me.id)

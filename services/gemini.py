@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -48,6 +49,13 @@ AI_BUSY_TEXT = (
     "⚠️ AI xizmati hozir band (so'rovlar limiti tugagan). "
     "Iltimos, biroz keyin qayta urinib ko'ring — admin xabardor qilindi."
 )
+
+AI_ERROR_TEXT = (
+    "⚠️ AI javob bera olmadi (texnik xato). Iltimos, savolni boshqacharoq yozib qayta urinib ko'ring."
+)
+
+# Claude zaxirasi billing/kalit xatosi bersa — 1 soat davomida urinmaymiz (har so'rovda bekor HTTP bo'lmasin)
+_claude_disabled_until = 0.0
 
 _RETRY_HMS = re.compile(r"retry in (?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s", re.IGNORECASE)
 _RETRY_DELAY = re.compile(r"retry_delay\s*\{\s*seconds:\s*(\d+)")
@@ -165,7 +173,9 @@ async def _generate(content, telegram_id=None, service=None, model=None) -> str:
             logger.exception("Gemini API error (%s)", name)
             break
 
-    if quota_hit and ANTHROPIC_API_KEY and CLAUDE_FALLBACK_MODEL and _is_text_content(content):
+    global _claude_disabled_until
+    if (quota_hit and ANTHROPIC_API_KEY and CLAUDE_FALLBACK_MODEL and _is_text_content(content)
+            and time.time() >= _claude_disabled_until):
         try:
             text = await asyncio.to_thread(_call_claude, content, long, telegram_id, service)
             logger.warning("Gemini kvotasi tugagani uchun javob Claude (%s) orqali berildi", CLAUDE_FALLBACK_MODEL)
@@ -177,8 +187,17 @@ async def _generate(content, telegram_id=None, service=None, model=None) -> str:
             )
             return text
         except Exception as e:  # noqa: BLE001
-            logger.exception("Claude fallback xatosi")
+            logger.error("Claude fallback xatosi: %s", _short_err(e))
             last_err = e
+            low = str(e).lower()
+            if any(k in low for k in ("credit", "billing", "authentication", "invalid x-api-key", "not_found")):
+                _claude_disabled_until = time.time() + 3600
+                await alerts.alert_admins(
+                    "claude_billing",
+                    "⚠️ Claude zaxirasi ishlamadi (Anthropic kalit/kredit muammosi) — 1 soat o'chirildi.\n"
+                    f"Sabab: {_short_err(e)}\n"
+                    "console.anthropic.com → Plans & Billing da kredit qo'shing.",
+                )
 
     if quota_hit:
         await alerts.alert_admins(
@@ -188,8 +207,9 @@ async def _generate(content, telegram_id=None, service=None, model=None) -> str:
             "Google AI Studio'da billing yoqing yoki GEMINI_API_KEY ni pullik loyiha kalitiga almashtiring.",
         )
         return AI_BUSY_TEXT
-    sabab = _short_err(last_err) if last_err else "noma'lum"
-    return f"⚠️ Gemini bilan bog'lanishda xatolik: {sabab}"
+    # Kvotasiz xato (xavfsizlik bloki, bo'sh javob, SDK): xom matn o'quvchiga ketmaydi
+    logger.warning("Gemini javob bera olmadi: %s", _short_err(last_err) if last_err else "noma'lum")
+    return AI_ERROR_TEXT
 
 
 def _load_prompt(name: str) -> str:

@@ -1,5 +1,6 @@
 """Texnik yordam oqimi: menu:support / /yordam → muammo + skrinshot qabul qilish."""
 import logging
+import asyncio
 from typing import Optional
 
 from aiogram import F, Router
@@ -59,7 +60,7 @@ async def support_cmd(message: Message, state: FSMContext) -> None:
     # Faqat ro'yxatdan o'tgan o'quvchi/admin — aks holda ro'yxatdan o'tish buzilardi
     # (registratsiya paytida /yordam yozsa, keyingi telefon raqami ticketga tushib qolardi).
     uid = message.from_user.id
-    if not (is_admin(uid) or is_user_approved(uid)):
+    if not await asyncio.to_thread(lambda: is_admin(uid) or is_user_approved(uid)):
         await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting.")
         return
     await _enter(message, state)
@@ -69,11 +70,11 @@ async def _save_and_confirm(
     message: Message, state: FSMContext, text: str, file_id: Optional[str]
 ) -> None:
     uid = message.from_user.id
-    row = _user_row(uid) or {}
+    row = await asyncio.to_thread(_user_row, uid) or {}
     full_name = (message.from_user.full_name or row.get("first_name") or "").strip() or None
     username = message.from_user.username
     cohort_id = row.get("cohort_id")
-    ticket = create_ticket(uid, username, full_name, cohort_id, text or None, file_id)
+    ticket = await asyncio.to_thread(create_ticket, uid, username, full_name, cohort_id, text or None, file_id)
     await state.clear()
     if ticket:
         logger.info("Support ticket #%s yaratildi (user=%s)", ticket.get("id"), uid)
@@ -94,7 +95,11 @@ async def support_text(message: Message, state: FSMContext) -> None:
     await _save_and_confirm(message, state, message.text.strip(), None)
 
 
-@router.message(SupportStates.waiting_report)
+def _not_command(message: Message) -> bool:
+    return not (message.text or "").startswith("/")
+
+
+@router.message(SupportStates.waiting_report, _not_command)
 async def support_other(message: Message) -> None:
     await message.answer(
         "Iltimos, muammoni matn sifatida yozing yoki skrinshot (rasm) yuboring."

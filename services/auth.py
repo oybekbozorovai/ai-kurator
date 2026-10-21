@@ -359,6 +359,13 @@ def reactivate_misassigned_phones() -> Tuple[int, int]:
     return ok, len(rows)
 
 
+def latest_active_cohort_id() -> Optional[str]:
+    """Eng so'nggi yaratilgan FAOL patok id (patoksiz o'quvchiga sertifikat berish uchun —
+    certificates.cohort_id NOT NULL)."""
+    rows = sb.select("cohorts", "is_active=eq.true&select=id&order=created_at.desc&limit=1")
+    return str(rows[0]["id"]) if rows and rows[0].get("id") else None
+
+
 def remove_allowed_phone(phone: str) -> bool:
     """allowed_contacts'dan telefon raqamni o'chiradi. Topilsa True, yo'q bo'lsa False."""
     n = normalize_phone(phone)
@@ -508,8 +515,12 @@ def is_user_approved(telegram_id: int) -> bool:
     cached = _approved_cache.get(telegram_id)
     if cached is not None:
         return cached
+    t0 = time.time()
     result = _compute_is_user_approved(telegram_id)
-    _approved_cache[telegram_id] = result
+    # Supabase xatosi tufayli False chiqqan bo'lsa keshlamaymiz — 30 s davomida
+    # ro'yxatdan o'tgan o'quvchi "ro'yxatdan o'tmagan" bo'lib qolmasin
+    if result or sb.last_error_ts() < t0:
+        _approved_cache[telegram_id] = result
     return result
 
 
@@ -562,8 +573,9 @@ def free_phone(phone: str) -> List[int]:
 
 
 def _registered_users() -> List[dict]:
-    """phone va telegram_id biriktirilgan userlar (botga kirganlar, patok bilan)."""
-    return sb.select(
+    """phone va telegram_id biriktirilgan userlar (botga kirganlar, patok bilan).
+    select_all — 1000 qatordan ko'p bo'lganda ham hammasi (e'lon, sertifikat eslatmasi, statistika)."""
+    return sb.select_all(
         "users",
         "phone=not.is.null&telegram_id=not.is.null"
         "&select=telegram_id,phone,first_name,username,role,created_at,cohort_id,"
@@ -602,7 +614,7 @@ def list_allowed_phones(limit: int = 500) -> List[Tuple]:
 
 def list_all_user_ids() -> List[int]:
     """Ro'yxatdan o'tgan (phone bor) o'quvchilarning telegram_id'lari (e'lon uchun)."""
-    rows = sb.select("users", "phone=not.is.null&telegram_id=not.is.null&select=telegram_id")
+    rows = sb.select_all("users", "phone=not.is.null&telegram_id=not.is.null&select=telegram_id")
     return [int(r["telegram_id"]) for r in rows if r.get("telegram_id") is not None]
 
 
@@ -812,8 +824,10 @@ def is_admin(telegram_id: int) -> bool:
     cached = _admin_cache.get(telegram_id)
     if cached is not None:
         return cached
+    t0 = time.time()
     result = is_assistant_admin(telegram_id) or _has_admin_role(telegram_id)
-    _admin_cache[telegram_id] = result
+    if result or sb.last_error_ts() < t0:
+        _admin_cache[telegram_id] = result
     return result
 
 
@@ -823,7 +837,7 @@ def is_admin(telegram_id: int) -> bool:
 
 def stats() -> Dict[str, int]:
     now = _now()
-    allowed = sb.select("allowed_contacts", "select=phone")
+    allowed = sb.select_all("allowed_contacts", "select=phone")
     registered = _registered_users()
     expired_pending = 0
     for r in registered if COHORT_EXPIRY_ENFORCED else []:

@@ -5,6 +5,8 @@ Savol-javob ham tugma orqali ('🎓 Kurs bo'yicha savol') — QAStates holatida.
 """
 
 import logging
+import time
+import asyncio
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ChatAction
@@ -32,6 +34,7 @@ from services.auth import (
     is_user_approved,
     normalize_phone,
 )
+from services import supabase_db as sb
 from services.gemini import ask_tutor
 from services.limiter import cache_answer, check_rate_limit, get_cached_answer
 from services.rag import format_context, retrieve
@@ -72,6 +75,11 @@ REGISTRATION_TEXT = (
     "ℹ️ Telegramdagi raqamingiz boshqacha bo'lsa ham — kursga yozilgan raqamni yozing."
 )
 
+TECH_ERROR_TEXT = (
+    "⚠️ Texnik nosozlik: ma'lumotlar bazasi javob bermadi. "
+    "Iltimos, 1 daqiqadan keyin qayta urinib ko'ring."
+)
+
 NOT_ALLOWED_TEXT = (
     "❌ Bu raqam kurs ro'yxatida topilmadi.\n\n"
     "• Raqamni xato yozgan bo'lsangiz — qaytadan to'g'ri yozing (masalan: +998901234567 yoki 901234567).\n"
@@ -104,8 +112,9 @@ ROADMAP_TEXT = (
 )
 
 
-def _is_allowed(user_id: int) -> bool:
-    return is_admin(user_id) or is_user_approved(user_id)
+async def _is_allowed(user_id: int) -> bool:
+    """Supabase'ga sinxron HTTP — thread'da, event loop bloklanmasin."""
+    return await asyncio.to_thread(lambda: is_admin(user_id) or is_user_approved(user_id))
 
 
 async def _request_phone(message: Message, state: FSMContext) -> None:
@@ -115,7 +124,8 @@ async def _request_phone(message: Message, state: FSMContext) -> None:
 
 async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) -> None:
     """Raqam ruxsat ro'yxatida topilganda — tasdiqlaydi va menyuni ochadi."""
-    ok = approve_user(
+    ok = await asyncio.to_thread(
+        approve_user,
         telegram_id=message.from_user.id,
         phone=phone,
         first_name=message.from_user.first_name or "",
@@ -141,15 +151,21 @@ async def _approve_and_welcome(message: Message, state: FSMContext, phone: str) 
 async def _process_phone(message: Message, state: FSMContext, raw_phone: str) -> None:
     """Raqamni tekshiradi: banlanmaganmi + ruxsat ro'yxatida bormi + band qilinmaganmi."""
     # Banlangan o'quvchi qayta ro'yxatdan o'tib banni chetlab o'tolmaydi
-    if is_banned(message.from_user.id):
+    if await asyncio.to_thread(is_banned, message.from_user.id):
         await message.answer(BANNED_TEXT)
         logger.info("Banlangan foydalanuvchi urindi: id=%s", message.from_user.id)
         return
 
     phone = normalize_phone(raw_phone)
 
-    status = get_allowed_phone_status(phone)
+    t0 = time.time()
+    status = await asyncio.to_thread(get_allowed_phone_status, phone)
     if status is None:
+        if sb.last_error_ts() >= t0:
+            # Baza javob bermadi — "ro'yxatda topilmadi" deyish noto'g'ri
+            await message.answer(TECH_ERROR_TEXT)
+            logger.warning("Supabase xatosi tufayli raqam tekshirilmadi: %s (id=%s)", phone, message.from_user.id)
+            return
         await message.answer(NOT_ALLOWED_TEXT)
         logger.info("Ruxsat etilmagan raqam: %s (id=%s)", phone, message.from_user.id)
         return
@@ -166,7 +182,7 @@ async def _process_phone(message: Message, state: FSMContext, raw_phone: str) ->
         )
         return
 
-    owner = get_phone_owner(phone)
+    owner = await asyncio.to_thread(get_phone_owner, phone)
     if owner is not None and owner != message.from_user.id:
         await message.answer(ALREADY_USED_TEXT)
         logger.info("Band raqam: %s (egasi id=%s), urindi id=%s",
@@ -190,7 +206,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     user_id = message.from_user.id
 
-    if _is_allowed(user_id):
+    if await _is_allowed(user_id):
         await message.answer(WELCOME, reply_markup=ReplyKeyboardRemove())
         await _show_menu(message)
         return
@@ -233,7 +249,7 @@ async def waiting_for_phone_other(message: Message) -> None:
 
 @router.message(Command("menu"))
 async def cmd_menu(message: Message, state: FSMContext) -> None:
-    if not _is_allowed(message.from_user.id):
+    if not await _is_allowed(message.from_user.id):
         await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting.")
         return
     await state.clear()
@@ -242,7 +258,7 @@ async def cmd_menu(message: Message, state: FSMContext) -> None:
 
 @router.message(Command("yordam", "help"))
 async def cmd_help(message: Message) -> None:
-    if not _is_allowed(message.from_user.id):
+    if not await _is_allowed(message.from_user.id):
         await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting.")
         return
     await message.answer(HELP)
@@ -254,7 +270,7 @@ async def cmd_help(message: Message) -> None:
 
 @router.callback_query(F.data == "menu:qa")
 async def qa_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     await state.set_state(QAStates.active)
@@ -354,7 +370,7 @@ async def cb_reminders_on(callback: CallbackQuery) -> None:
 @router.message(F.text)
 async def fallback(message: Message, state: FSMContext) -> None:
     """Holatsiz matn — o'quvchini menyuga yo'naltiradi."""
-    if not _is_allowed(message.from_user.id):
+    if not await _is_allowed(message.from_user.id):
         await message.answer("⛔ Botdan foydalanish uchun /start bosing.")
         return
     await state.clear()

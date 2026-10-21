@@ -224,7 +224,7 @@ def cert_days_left(row: Optional[dict], days: int) -> int:
 
 def _cert_holders() -> set:
     """Supabase'da sertifikati bor (telegram_id, cohort_id) juftliklari — bitta so'rovda."""
-    rows = sb.select("certificates", "select=telegram_id,cohort_id")
+    rows = sb.select_all("certificates", "select=telegram_id,cohort_id")
     return {(int(r["telegram_id"]), str(r["cohort_id"])) for r in rows}
 
 

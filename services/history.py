@@ -7,7 +7,7 @@ file_id ishlatilgani uchun rasmlar Railway redeploy'da yo'qolmaydi.
 import logging
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from config import YT_DB_PATH
@@ -56,10 +56,14 @@ def log_generation(telegram_id: int, service: str, kind: str, label: str,
         )
 
 
+_TASHKENT = timezone(timedelta(hours=5))
+
+
 def count_today(telegram_id: int, kind: str) -> int:
-    """Bugun (yarim tundan beri) shu turdagi nechta ish yaratilgan."""
+    """Bugun (Toshkent vaqti bilan yarim tundan beri) shu turdagi nechta ish yaratilgan.
+    Server UTC'da — datetime.now() bo'lsa limit 05:00 da yangilanardi."""
     start_of_day = int(
-        datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        datetime.now(_TASHKENT).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     )
     with _lock, sqlite3.connect(YT_DB_PATH) as c:
         row = c.execute(

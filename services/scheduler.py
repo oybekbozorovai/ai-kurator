@@ -130,7 +130,7 @@ async def kick_expired_loop(bot: Bot) -> None:
 async def warn_expiring_soon(bot: Bot) -> int:
     """Muddati yaqinlashganlarni (default 3 kun) ogohlantiradi.
     Faqat MUVAFFAQIYATLI yuborilганda belgilaydi — vaqtinchalik xatoda keyingi soatda qayta uradi."""
-    users = get_users_to_warn(WARN_BEFORE_DAYS)
+    users = await asyncio.to_thread(get_users_to_warn, WARN_BEFORE_DAYS)
     if not users:
         return 0
     warned = 0
@@ -198,7 +198,7 @@ CERT_PROMPT_MESSAGE = (
 async def prompt_certificates(bot: Bot) -> int:
     """Botga qo'shilganiga CERT_OPEN_AFTER_DAYS kun to'lgan o'quvchilarga bir marta
     sertifikat olish eslatmasini yuboradi (Ism Familiya yuborish kerakligi bilan)."""
-    users = get_users_for_certificate(CERT_OPEN_AFTER_DAYS)
+    users = await asyncio.to_thread(get_users_for_certificate, CERT_OPEN_AFTER_DAYS)
     if not users:
         return 0
     kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -238,7 +238,7 @@ async def support_notifier_loop(bot: Bot) -> None:
 
 async def deliver_resolved_tickets(bot: Bot) -> int:
     """Hal qilingan, lekin xabar berilmagan ticketlarni o'quvchiga yetkazadi."""
-    tickets = get_unnotified_resolved()
+    tickets = await asyncio.to_thread(get_unnotified_resolved)
     if not tickets:
         return 0
     sent = 0
@@ -261,7 +261,7 @@ async def deliver_resolved_tickets(bot: Bot) -> int:
 
 async def kick_expired_once(bot: Bot) -> int:
     """Muddati o'tganlarni darhol chiqaradi. Chiqarilgan talabalar sonini qaytaradi."""
-    expired = get_expired_users()
+    expired = await asyncio.to_thread(get_expired_users)
     if not expired:
         return 0
 

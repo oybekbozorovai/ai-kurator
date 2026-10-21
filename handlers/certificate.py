@@ -6,6 +6,7 @@ Qoidalar:
   har qayta olishda eski sertifikat bekor bo'lib, yangi ID bilan beriladi.
 """
 import logging
+import asyncio
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
@@ -15,7 +16,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from config import CERT_MAX_ISSUES, CERT_OPEN_AFTER_DAYS, COURSE_NAME
 from keyboards import home_kb
-from services.auth import _user_row, is_admin, is_user_approved
+from services.auth import _user_row, is_admin, is_user_approved, latest_active_cohort_id
 from services.certificate import clean_name, generate_cert_id, render_certificate
 from services.cert_store import (
     cert_days_left,
@@ -69,13 +70,19 @@ def _is_command(message: Message) -> bool:
 
 async def _begin_cert(callback: CallbackQuery, state: FSMContext) -> None:
     uid = callback.from_user.id
-    admin = is_admin(uid)
-    if not (admin or is_user_approved(uid)):
+    admin = await asyncio.to_thread(is_admin, uid)
+    if not (admin or await asyncio.to_thread(is_user_approved, uid)):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
 
-    row = _user_row(uid) or {}
+    row = await asyncio.to_thread(_user_row, uid) or {}
     cohort_id = row.get("cohort_id")
+    if not cohort_id and not admin:
+        # Patoksiz o'quvchi (/add_phone, amoCRM sync, patok tekshiruvi o'chiq) — certificates.cohort_id
+        # NOT NULL, shuning uchun eng so'nggi faol patokka yozamiz
+        cohort_id = await asyncio.to_thread(latest_active_cohort_id)
+        if cohort_id:
+            logger.info("Sertifikat: patoksiz o'quvchi %s uchun faol patok %s olindi", uid, cohort_id)
 
     if admin:
         # Adminlar sinash uchun har doim ola oladi (muddat/limit shart emas, bazaga yozilmaydi)
@@ -102,8 +109,8 @@ async def _begin_cert(callback: CallbackQuery, state: FSMContext) -> None:
         )
         return
 
-    issued = cert_issue_count(uid, cohort_id)
-    existing = get_certificate(uid, cohort_id) if issued else None
+    issued = await asyncio.to_thread(cert_issue_count, uid, cohort_id)
+    existing = (await asyncio.to_thread(get_certificate, uid, cohort_id)) if issued else None
     if issued >= CERT_MAX_ISSUES:
         await callback.answer()
         await callback.message.answer(
@@ -157,7 +164,7 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
         return
 
     # Limit qayta tekshiriladi (tugma bosilgandan keyin vaqt o'tgan bo'lishi mumkin)
-    if not is_test and cert_issue_count(uid, cohort_id) >= CERT_MAX_ISSUES:
+    if not is_test and await asyncio.to_thread(cert_issue_count, uid, cohort_id) >= CERT_MAX_ISSUES:
         await state.clear()
         existing = get_certificate(uid, cohort_id) or {}
         await message.answer(EXHAUSTED_TEXT.format(
@@ -168,7 +175,7 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
 
     cert_id = generate_cert_id()
     try:
-        png_bytes = render_certificate(full_name, cert_id)
+        png_bytes = await asyncio.to_thread(render_certificate, full_name, cert_id)
     except Exception as e:
         logger.error("Sertifikat render xato: %s", e)
         await message.answer("Sertifikat yaratishda xatolik. Iltimos, qayta urinib ko'ring.")
@@ -186,7 +193,7 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
 
     # Avval bazaga yozamiz — yozilmasa o'quvchiga rasm ham ketmaydi (mos kelmasligi oldini oladi)
     try:
-        old_id = save_certificate(cert_id, uid, full_name, cohort_id, COURSE_NAME)
+        old_id = await asyncio.to_thread(save_certificate, cert_id, uid, full_name, cohort_id, COURSE_NAME)
     except Exception as e:
         logger.error("Sertifikat bazaga yozilmadi (user=%s): %s", uid, e)
         await message.answer("Sertifikatni saqlashda xatolik. Iltimos, birozdan so'ng qayta urinib ko'ring.")
@@ -210,7 +217,7 @@ async def cert_receive_name(message: Message, state: FSMContext) -> None:
     )
     try:
         from services.cert_storage import delete_cert_png, upload_cert_png
-        upload_cert_png(cert_id, png_bytes)  # saytdagi gallereya uchun (non-fatal)
+        await asyncio.to_thread(upload_cert_png, cert_id, png_bytes)  # saytdagi gallereya uchun (non-fatal)
         if old_id:
             delete_cert_png(old_id)
     except Exception as e:

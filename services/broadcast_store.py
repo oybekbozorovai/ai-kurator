@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime, timezone
 
-from services.supabase_db import delete, insert, select
+from services.supabase_db import delete, insert, select, select_all
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def save_messages_bulk(rows: list, broadcast_type: str) -> None:
 def get_messages(broadcast_type: str) -> list[dict]:
     """broadcast_type bo'yicha barcha saqlangan xabarlarni qaytaradi."""
     try:
-        return select(TABLE, f"broadcast_type=eq.{broadcast_type}&select=telegram_id,message_id")
+        return select_all(TABLE, f"broadcast_type=eq.{broadcast_type}&select=telegram_id,message_id")
     except Exception as e:
         logger.warning("broadcast_messages o'qishda xato: %s", e)
         return []

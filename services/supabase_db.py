@@ -5,6 +5,7 @@ Xato bo'lsa SupabaseError ko'tariladi; o'qish yordamchilarida default qiymat qay
 va xato log'ga yoziladi (auth gate'lari xato holatida "deny" tomon ishlaydi)."""
 import json
 import logging
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -55,11 +56,23 @@ def request(method: str, path: str, query: str = "", body=None, prefer: Optional
         raise SupabaseError(f"{method} {path}: {e}") from e
 
 
+_last_error_ts = 0.0
+
+
+def last_error_ts() -> float:
+    """Oxirgi SELECT xatosi vaqti (time.time()). Chaqiruvchi "bo'sh natija" bilan
+    "baza javob bermadi" ni farqlashi uchun: xato t0 dan keyin bo'lsa — nosozlik."""
+    return _last_error_ts
+
+
 def select(table: str, query: str = "") -> list:
-    """SELECT — xato bo'lsa bo'sh ro'yxat qaytaradi (gate'lar deny tomon ishlaydi)."""
+    """SELECT — xato bo'lsa bo'sh ro'yxat qaytaradi (gate'lar deny tomon ishlaydi).
+    Xato vaqti last_error_ts() da saqlanadi."""
+    global _last_error_ts
     try:
         return request("GET", table, query)
     except SupabaseError as e:
+        _last_error_ts = time.time()
         logger.error("Supabase select xato: %s", e)
         return []
 

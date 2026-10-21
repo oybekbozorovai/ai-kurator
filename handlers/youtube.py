@@ -255,18 +255,27 @@ def _niche_kb(kind: str) -> "InlineKeyboardMarkup":
 # Yordamchi funksiyalar
 # ============================================================
 
-def _is_allowed(user_id: int) -> bool:
-    """O'quvchi tasdiqlangan yoki admin (asosiy/yordamchi)."""
-    return is_admin(user_id) or is_user_approved(user_id)
+async def _is_allowed(user_id: int) -> bool:
+    """O'quvchi tasdiqlangan yoki admin (asosiy/yordamchi). Supabase HTTP — thread'da."""
+    return await asyncio.to_thread(lambda: is_admin(user_id) or is_user_approved(user_id))
 
 
-def _check_limit(user_id: int, kind: str):
-    """Kunlik limit tekshiruvi. (ruxsat_bormi, qolgan_son) qaytaradi."""
+def _check_limit_sync(user_id: int, kind: str):
     if is_admin(user_id):
         return True, -1  # adminlarga limit yo'q
     limit = DAILY_IMAGE_LIMIT if kind == "image" else DAILY_TEXT_LIMIT
     used = count_today(user_id, kind)
     return used < limit, limit - used
+
+
+async def _check_limit(user_id: int, kind: str):
+    """Kunlik limit tekshiruvi. (ruxsat_bormi, qolgan_son) qaytaradi. (Supabase + sqlite — thread'da)"""
+    return await asyncio.to_thread(_check_limit_sync, user_id, kind)
+
+
+def _not_command(message: Message) -> bool:
+    """/start, /menu kabi buyruqlar FSM holat handlerlarida yutilib ketmasin."""
+    return not (message.text or "").startswith("/")
 
 
 async def _send_text_result(message: Message, text: str) -> None:
@@ -385,11 +394,11 @@ async def _gate_generation(message: Message, state: FSMContext, kind: str) -> bo
     """Generatsiya oldidan haqiqiy tekshiruv (matn/rasm bosqichida).
     Eski tugma yoki muddat o'tgan/banlangan foydalanuvchi suiiste'molini to'xtatadi.
     Xato bo'lsa holatni tozalab, sababni yozadi va False qaytaradi."""
-    if not _is_allowed(message.from_user.id):
+    if not await _is_allowed(message.from_user.id):
         await state.clear()
         await message.answer("⛔ Avval /start bosib ro'yxatdan o'ting yoki ruxsatingizni tekshiring.")
         return False
-    ok, _ = _check_limit(message.from_user.id, kind)
+    ok, _ = await _check_limit(message.from_user.id, kind)
     if not ok:
         await state.clear()
         limit = DAILY_IMAGE_LIMIT if kind == "image" else DAILY_TEXT_LIMIT
@@ -478,13 +487,13 @@ _ANALYSIS_START_TEXT = (
 
 @router.callback_query(F.data == "menu:channel_analysis")
 async def analysis_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     if not yt_api_ready():
         await callback.answer("🔍 Kanal analizi tez orada ishga tushadi. Biroz kuting!", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "text")
+    ok, _ = await _check_limit(callback.from_user.id, "text")
     if not ok:
         await _deny_limit(callback, "text")
         return
@@ -623,10 +632,10 @@ async def watch_stop(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:channel_seo")
 async def channel_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "text")
+    ok, _ = await _check_limit(callback.from_user.id, "text")
     if not ok:
         await _deny_limit(callback, "text")
         return
@@ -678,7 +687,7 @@ async def channel_process(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "menu:video_seo")
 async def video_start(callback: CallbackQuery, state: FSMContext) -> None:
     """Video SEO — tayyor yo'nalishlar menyusini ko'rsatadi."""
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     await state.clear()
@@ -694,7 +703,7 @@ async def video_start(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("vseo:") & ~(F.data == "vseo:custom"))
 async def video_preset(callback: CallbackQuery, state: FSMContext) -> None:
     """Tayyor yo'nalishni ko'rsatadi — AI ishlatilmaydi, limit yo'q."""
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     key = callback.data.split(":", 1)[1]
@@ -722,10 +731,10 @@ async def video_preset(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "vseo:custom")
 async def video_custom(callback: CallbackQuery, state: FSMContext) -> None:
     """O'z yo'nalishi — mavzu so'raydi, AI generatsiya qiladi."""
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "text")
+    ok, _ = await _check_limit(callback.from_user.id, "text")
     if not ok:
         await _deny_limit(callback, "text")
         return
@@ -778,10 +787,10 @@ async def video_process(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "menu:avatar")
 async def avatar_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "image")
+    ok, _ = await _check_limit(callback.from_user.id, "image")
     if not ok:
         await _deny_limit(callback, "image")
         return
@@ -795,10 +804,10 @@ async def avatar_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("niche:"))
 async def niche_select(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "image")
+    ok, _ = await _check_limit(callback.from_user.id, "image")
     if not ok:
         await _deny_limit(callback, "image")
         return
@@ -889,7 +898,7 @@ async def avatar_name_process(message: Message, state: FSMContext) -> None:
     waiting = await message.answer("🎨 Avatar chizilmoqda... (30-60 soniya)")
     try:
         image = await _generate_niche_image(niche_key, "avatar", channel_name)
-        usage.record(message.from_user.id, "avatar", kind="image", model=FLUX_MODEL)
+        await asyncio.to_thread(usage.record, message.from_user.id, "avatar", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Avatar yaratish xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -912,10 +921,10 @@ async def avatar_name_process(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "menu:banner")
 async def banner_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "image")
+    ok, _ = await _check_limit(callback.from_user.id, "image")
     if not ok:
         await _deny_limit(callback, "image")
         return
@@ -938,7 +947,7 @@ async def banner_name_process(message: Message, state: FSMContext) -> None:
     waiting = await message.answer("🎨 Banner chizilmoqda... (30-60 soniya)")
     try:
         image = await _generate_niche_image(niche_key, "banner", channel_name)
-        usage.record(message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
+        await asyncio.to_thread(usage.record, message.from_user.id, "banner", kind="image", model=FLUX_MODEL)
     except Exception:
         logger.exception("Banner yaratish xatosi")
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
@@ -981,10 +990,10 @@ _THUMB_EDIT_TEXT = (
 
 @router.callback_query(F.data == "menu:thumbnail")
 async def thumb_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "image")
+    ok, _ = await _check_limit(callback.from_user.id, "image")
     if not ok:
         await _deny_limit(callback, "image")
         return
@@ -1029,10 +1038,10 @@ async def thumb_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not data.get("last_file_id"):
         await callback.answer("Avval rasm yarating (🔄 Yangi rasm).", show_alert=True)
         return
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
-    ok, _ = _check_limit(callback.from_user.id, "image")
+    ok, _ = await _check_limit(callback.from_user.id, "image")
     if not ok:
         await _deny_limit(callback, "image")
         return
@@ -1096,7 +1105,7 @@ async def _thumb_generate(message: Message, state: FSMContext, prompt: str,
         await waiting.edit_text(ERROR_TEXT, reply_markup=home_kb())
         return
 
-    usage.record(uid, "thumbnail", kind="image", model=NANO_BANANA_MODEL)
+    await asyncio.to_thread(usage.record, uid, "thumbnail", kind="image", model=NANO_BANANA_MODEL)
     try:
         await waiting.delete()
     except Exception:
@@ -1213,7 +1222,7 @@ async def thumb_overlay_text(callback: CallbackQuery, state: FSMContext) -> None
 
 @router.callback_query(F.data == "menu:thumb_download")
 async def thumb_download_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     await state.set_state(YT.thumb_download)
@@ -1335,7 +1344,7 @@ async def thumb_download_process(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "menu:history")
 async def history_show(callback: CallbackQuery, state: FSMContext) -> None:
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     await state.clear()
@@ -1357,7 +1366,7 @@ async def history_show(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("hist:"))
 async def history_open(callback: CallbackQuery) -> None:
     """Tarixdagi bitta ishni qayta yuboradi."""
-    if not _is_allowed(callback.from_user.id):
+    if not await _is_allowed(callback.from_user.id):
         await callback.answer("Avval /start bosib ro'yxatdan o'ting.", show_alert=True)
         return
     item_id = int(callback.data.split(":")[-1])
@@ -1386,7 +1395,7 @@ async def history_open(callback: CallbackQuery) -> None:
 @router.message(StateFilter(
     YT.channel, YT.video, YT.channel_analysis,
     YT.avatar_name, YT.banner_name, YT.thumb_prompt, YT.thumb_edit, YT.thumb_text, YT.thumb_download,
-))
+), _not_command)
 async def _yt_expect_text(message: Message) -> None:
     """Matn kutilgan bosqichda rasm/stiker yuborilsa — jim qolmasdan yo'naltiradi."""
     await message.answer(
@@ -1396,7 +1405,7 @@ async def _yt_expect_text(message: Message) -> None:
     )
 
 
-@router.message(StateFilter(YT.thumb_position, YT.thumb_color))
+@router.message(StateFilter(YT.thumb_position, YT.thumb_color), _not_command)
 async def _yt_expect_button(message: Message) -> None:
     """Tugma kutilgan bosqichda matn yozilsa — holatni saqlab, tugmani eslatadi."""
     await message.answer(

@@ -35,6 +35,15 @@ def _clean(value: str) -> str:
 TELEGRAM_BOT_TOKEN = _clean(os.getenv("TELEGRAM_BOT_TOKEN", ""))
 GEMINI_API_KEY = _clean(os.getenv("GEMINI_API_KEY", ""))
 GEMINI_MODEL = _clean(os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+# Asosiy model kvotasi (429) tugaganda NAVBAT bilan sinaladigan zaxira Gemini modellari.
+# Har modelning bepul tarifdagi kvotasi alohida (2026-10: 2.5-flash kuniga 20 / daqiqasiga 5 so'rov).
+GEMINI_FALLBACK_MODELS = [
+    m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-3-flash-preview").split(",")
+    if m.strip()
+]
+# Barcha Gemini modellari 429 bo'lsa — Claude (faqat matnli so'rovlar). "" — o'chiq.
+ANTHROPIC_API_KEY = _clean(os.getenv("ANTHROPIC_API_KEY", ""))
+CLAUDE_FALLBACK_MODEL = _clean(os.getenv("CLAUDE_FALLBACK_MODEL", "claude-haiku-5-5"))
 
 # --- Supabase (yagona auth/roster manbai — A.Y.P.I Platforma bilan umumiy) ---
 SUPABASE_URL = _clean(os.getenv("SUPABASE_URL", "")).rstrip("/")

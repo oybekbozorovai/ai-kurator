@@ -159,3 +159,19 @@ Ikkita bot bir vaqtda ishlayotgan bo'lishi mumkin (`Conflict`). Railway'da faqat
 
 **O'quvchi "raqamim topilmadi" deyapti?**
 `/list_phones` da raqami bormi tekshiring. Yo'q bo'lsa `/add_phone` bilan qo'shing. Format farq qilsa ham bot to'g'rilaydi.
+
+## AI (Gemini) kvotasi va zaxira yo'llar
+
+Bot savol-javob va tahlillar uchun Google Gemini'dan foydalanadi. **Kalit bepul tarifda bo'lsa** limit juda
+kichik (2026-10: `gemini-2.5-flash` — kuniga 20 ta, daqiqasiga 5 ta so'rov). Limit tugasa Google 429 qaytaradi.
+
+Bot shunda o'zi quyidagi tartibda ishlaydi (hech narsa qilish shart emas):
+1. Daqiqalik limit bo'lsa — bir necha soniya kutib qayta uradi.
+2. Kunlik kvota tugasa — zaxira modellar: `GEMINI_FALLBACK_MODELS` (default `gemini-2.5-flash-lite,gemini-3-flash-preview`),
+   har birining kvotasi alohida.
+3. Hammasi tugasa — Claude (`CLAUDE_FALLBACK_MODEL`, default `claude-haiku-5-5`, `ANTHROPIC_API_KEY` kerak).
+4. U ham bo'lmasa — o'quvchiga «AI hozir band» xabari (xom xato ko'rsatilmaydi), adminga soatiga 1 marta ogohlantirish.
+Embedding kvotasi tugasa savollar vaqtincha kalit so'z qidiruvi bilan javoblanadi (aniqlik pastroq), admin ogohlantiriladi.
+
+**Doimiy yechim:** Google AI Studio (aistudio.google.com) → loyiha → Billing'ni yoqing (pay-as-you-go). Shunda
+limitlar yuzlab barobar oshadi; 300 savol/kun taxminan 0.5–1 $/kun. Yoki `GEMINI_API_KEY` ni billing yoqilgan loyiha kalitiga almashtiring.

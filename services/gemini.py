@@ -3,34 +3,193 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 import google.generativeai as genai
+from google.api_core import exceptions as gax
 
-from config import GEMINI_API_KEY, GEMINI_MODEL, PROMPTS_DIR
-from services import usage
+from config import (
+    ANTHROPIC_API_KEY,
+    CLAUDE_FALLBACK_MODEL,
+    GEMINI_API_KEY,
+    GEMINI_FALLBACK_MODELS,
+    GEMINI_MODEL,
+    PROMPTS_DIR,
+)
+from services import alerts, usage
 
 logger = logging.getLogger(__name__)
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-_model = genai.GenerativeModel(
-    GEMINI_MODEL,
-    generation_config={
-        "temperature": 0.3,
-        "max_output_tokens": 4096,
-    },
-)
-
+_GEN_CONFIG_SHORT = {"temperature": 0.3, "max_output_tokens": 4096}
 # Uzun tahlillar uchun (raqobatchi analizi, PDF matni): Gemini 2.5 "o'ylash" tokenlari ham
 # max_output_tokens ga kiradi — 4096 bilan javob MAX_TOKENS'da qisqarib qolardi.
-_model_long = genai.GenerativeModel(
-    GEMINI_MODEL,
-    generation_config={
-        "temperature": 0.3,
-        "max_output_tokens": 16384,
-    },
+_GEN_CONFIG_LONG = {"temperature": 0.3, "max_output_tokens": 16384}
+
+_models: Dict[Tuple[str, bool], genai.GenerativeModel] = {}
+
+
+def _get_model(name: str, long: bool = False) -> genai.GenerativeModel:
+    key = (name, long)
+    if key not in _models:
+        _models[key] = genai.GenerativeModel(
+            name, generation_config=_GEN_CONFIG_LONG if long else _GEN_CONFIG_SHORT
+        )
+    return _models[key]
+
+
+# Eski nomlar — chaqiruvchilar `model=_model_long` deb uzatadi (uzun javob rejimi belgisi)
+_model = _get_model(GEMINI_MODEL, False)
+_model_long = _get_model(GEMINI_MODEL, True)
+
+# O'quvchiga ko'rsatiladigan xabar. "⚠️" bilan boshlanadi — handlerlar bunday javobni keshlamaydi.
+AI_BUSY_TEXT = (
+    "⚠️ AI xizmati hozir band (so'rovlar limiti tugagan). "
+    "Iltimos, biroz keyin qayta urinib ko'ring — admin xabardor qilindi."
 )
+
+_RETRY_HMS = re.compile(r"retry in (?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s", re.IGNORECASE)
+_RETRY_DELAY = re.compile(r"retry_delay\s*\{\s*seconds:\s*(\d+)")
+_QUOTA_LIMIT = re.compile(r"limit:\s*(\d+)")
+
+
+def _is_quota_error(err: Exception) -> bool:
+    if isinstance(err, (gax.ResourceExhausted, gax.TooManyRequests)):
+        return True
+    text = str(err)
+    return "429" in text and ("quota" in text.lower() or "rate" in text.lower())
+
+
+def _retry_seconds(err: Exception) -> Optional[float]:
+    """429 matnidan 'retry in 12h42m54s' / 'retry_delay { seconds: 45774 }' ni soniyaga o'giradi."""
+    text = str(err)
+    m = _RETRY_HMS.search(text)
+    if m:
+        h, mnt, sec = m.groups()
+        return int(h or 0) * 3600 + int(mnt or 0) * 60 + float(sec)
+    m = _RETRY_DELAY.search(text)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def _short_err(err: Exception) -> str:
+    text = str(err).replace("\n", " ")
+    m = _QUOTA_LIMIT.search(text)
+    lim = f" limit={m.group(1)}" if m else ""
+    return f"{type(err).__name__}{lim}: {text[:120]}"
+
+
+def _is_text_content(content) -> bool:
+    if isinstance(content, str):
+        return True
+    return isinstance(content, (list, tuple)) and all(isinstance(p, str) for p in content)
+
+
+def _call_gemini(name: str, content, long: bool, telegram_id, service) -> str:
+    response = _get_model(name, long).generate_content(content)
+    text = response.text or ""
+    # Iste'mol (token/xarajat) hisobi — best-effort, oqimni buzmaydi
+    if service:
+        usage.record_from_gemini(response, telegram_id, service, name)
+    # Tugallanish sababini log qilamiz — debug uchun
+    try:
+        fr = response.candidates[0].finish_reason.name
+        if fr not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+            logger.warning("Gemini (%s) javobni to'liq tugatmadi: %s (uzunligi: %d)", name, fr, len(text))
+    except Exception:
+        pass
+    return text or "(Gemini bo'sh javob qaytardi)"
+
+
+def _call_claude(content, long: bool, telegram_id, service) -> str:
+    """Barcha Gemini modellari kvotasi tugaganda — Claude (faqat matn)."""
+    import anthropic
+
+    text = content if isinstance(content, str) else "\n\n".join(content)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = client.messages.create(
+        model=CLAUDE_FALLBACK_MODEL,
+        max_tokens=16384 if long else 4096,
+        temperature=0.3,
+        messages=[{"role": "user", "content": text}],
+    )
+    out = "".join(getattr(b, "text", "") for b in msg.content).strip()
+    if service:
+        try:
+            usage.record(
+                telegram_id, service, kind="text", model=CLAUDE_FALLBACK_MODEL,
+                prompt_tokens=int(msg.usage.input_tokens), completion_tokens=int(msg.usage.output_tokens),
+            )
+        except Exception:
+            pass
+    return out or "(Claude bo'sh javob qaytardi)"
+
+
+async def _generate(content, telegram_id=None, service=None, model=None) -> str:
+    """Matn/rasm so'rovini yuboradi. Tartib:
+    1) GEMINI_MODEL; daqiqalik limit (qisqa retry) bo'lsa biroz kutib yana bir bor;
+    2) kvota tugagan bo'lsa — GEMINI_FALLBACK_MODELS navbat bilan (har birining kvotasi alohida);
+    3) hammasi tugasa — Claude (faqat matnli so'rov);
+    4) u ham bo'lmasa — AI_BUSY_TEXT (xom xato o'quvchiga ko'rsatilmaydi) + adminga ogohlantirish.
+    `model=_model_long` — uzun javob rejimi (eski imzo saqlangan)."""
+    long = model is _model_long
+    chain = [GEMINI_MODEL] + [m for m in GEMINI_FALLBACK_MODELS if m != GEMINI_MODEL]
+    last_err: Optional[Exception] = None
+    quota_hit = False
+
+    for name in chain:
+        try:
+            return await asyncio.to_thread(_call_gemini, name, content, long, telegram_id, service)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if _is_quota_error(e):
+                quota_hit = True
+                wait = _retry_seconds(e)
+                if wait is not None and wait <= 15:
+                    # Daqiqalik limit (masalan 5 so'rov/daqiqa) — kutib shu modelda yana bir urinish
+                    logger.info("Gemini %s daqiqalik limit, %.0fs kutaman", name, wait + 1)
+                    await asyncio.sleep(wait + 1)
+                    try:
+                        return await asyncio.to_thread(_call_gemini, name, content, long, telegram_id, service)
+                    except Exception as e2:  # noqa: BLE001
+                        last_err = e2
+                logger.warning("Gemini %s kvotasi tugadi — keyingi model. %s", name, _short_err(last_err))
+                continue
+            if isinstance(e, (gax.ServiceUnavailable, gax.DeadlineExceeded, gax.InternalServerError)):
+                logger.warning("Gemini %s vaqtincha ishlamayapti — keyingi model. %s", name, _short_err(e))
+                continue
+            # Boshqa xato (xavfsizlik bloki, noto'g'ri so'rov, SDK xatosi) — zaxira model ham shunday
+            # javob beradi, shuning uchun to'xtaymiz.
+            logger.exception("Gemini API error (%s)", name)
+            break
+
+    if quota_hit and ANTHROPIC_API_KEY and CLAUDE_FALLBACK_MODEL and _is_text_content(content):
+        try:
+            text = await asyncio.to_thread(_call_claude, content, long, telegram_id, service)
+            logger.warning("Gemini kvotasi tugagani uchun javob Claude (%s) orqali berildi", CLAUDE_FALLBACK_MODEL)
+            await alerts.alert_admins(
+                "gemini_quota_claude",
+                "⚠️ Gemini kvotasi tugadi — javoblar vaqtincha Claude orqali berilyapti.\n"
+                f"Sabab: {_short_err(last_err) if last_err else '?'}\n"
+                "Doimiy yechim: Google AI Studio'da loyiha uchun billing yoqing (pullik tarif).",
+            )
+            return text
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Claude fallback xatosi")
+            last_err = e
+
+    if quota_hit:
+        await alerts.alert_admins(
+            "gemini_quota_down",
+            "🛑 AI javob bera olmayapti: Gemini kvotasi tugagan, zaxira ham ishlamadi.\n"
+            f"Sabab: {_short_err(last_err) if last_err else '?'}\n"
+            "Google AI Studio'da billing yoqing yoki GEMINI_API_KEY ni pullik loyiha kalitiga almashtiring.",
+        )
+        return AI_BUSY_TEXT
+    sabab = _short_err(last_err) if last_err else "noma'lum"
+    return f"⚠️ Gemini bilan bog'lanishda xatolik: {sabab}"
 
 
 def _load_prompt(name: str) -> str:
@@ -64,29 +223,6 @@ async def grade_homework(
         return await _generate([prompt, image_part], telegram_id=telegram_id, service="grader")
 
     return await _generate(prompt, telegram_id=telegram_id, service="grader")
-
-
-async def _generate(content, telegram_id=None, service=None, model=None) -> str:
-    def _call():
-        response = (model or _model).generate_content(content)
-        text = response.text or ""
-        # Iste'mol (token/xarajat) hisobi — best-effort, oqimni buzmaydi
-        if service:
-            usage.record_from_gemini(response, telegram_id, service, GEMINI_MODEL)
-        # Tugallanish sababini log qilamiz — debug uchun
-        try:
-            fr = response.candidates[0].finish_reason.name
-            if fr not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
-                logger.warning("Gemini javobni to'liq tugatmadi: %s (uzunligi: %d)", fr, len(text))
-        except Exception:
-            pass
-        return text or "(Gemini bo'sh javob qaytardi)"
-
-    try:
-        return await asyncio.to_thread(_call)
-    except Exception as e:
-        logger.exception("Gemini API error")
-        return f"⚠️ Gemini bilan bog'lanishda xatolik: {e}"
 
 
 # ============================================================

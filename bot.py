@@ -7,6 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_BOT_TOKEN
 from handlers import admin, certificate, group, private, support, youtube
+from services import alerts
 from services.scheduler import (
     amocrm_sync_loop,
     competitor_watch_loop,
@@ -48,6 +49,7 @@ async def main() -> None:
 
     me = await bot.get_me()
     logger.info("Bot ishga tushdi: @%s (id=%s)", me.username, me.id)
+    alerts.set_bot(bot)  # xizmatlar (Gemini kvota va h.k.) adminga ogohlantirish yubora olsin
 
     # Muddati o'tgan talabalarni avtomat chiqarish — har soatda
     _spawn(kick_expired_loop(bot))

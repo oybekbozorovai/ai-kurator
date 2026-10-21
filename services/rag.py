@@ -126,10 +126,10 @@ def chunk_text(text: str, source: str, size: int = CHUNK_SIZE, overlap: int = CH
     return out
 
 
-def _embed_batch(texts: List[str], task_type: str) -> np.ndarray:
-    """Gemini embedding'larini olish — sinxron, batch. Kvota xatosida qayta urinadi."""
-    wait = 60
-    for attempt in range(4):
+def _embed_batch(texts: List[str], task_type: str, attempts: int = 4, wait: int = 60) -> np.ndarray:
+    """Gemini embedding'larini olish — sinxron, batch. Kvota xatosida qayta urinadi.
+    Hujjat indekslash (oflayn): 4 urinish, 60s→120s→240s. Savol (interaktiv): embed_query qisqa beradi."""
+    for attempt in range(attempts):
         try:
             result = genai.embed_content(
                 model=EMBEDDING_MODEL,
@@ -139,11 +139,12 @@ def _embed_batch(texts: List[str], task_type: str) -> np.ndarray:
             )
             return np.array(result["embedding"], dtype=np.float32)
         except gax_exceptions.ResourceExhausted:
-            if attempt == 3:
+            if attempt == attempts - 1:
                 raise
             logger.warning("Embedding kvota chegarasi, %d soniya kutaman...", wait)
             time.sleep(wait)
             wait = min(wait * 2, 600)
+    raise RuntimeError("embed: urinishlar tugadi")
 
 
 async def embed_documents(texts: List[str]) -> np.ndarray:
@@ -158,9 +159,34 @@ async def embed_documents(texts: List[str]) -> np.ndarray:
 
 
 async def embed_query(query: str) -> np.ndarray:
-    """Bitta savolni embed qiladi."""
-    vec = await asyncio.to_thread(_embed_batch, [query], "RETRIEVAL_QUERY")
+    """Bitta savolni embed qiladi. Interaktiv — kvota tugasa 5 s kutib bir marta qayta uradi,
+    keyin xato ko'taradi (retrieve kalit so'z qidiruviga o'tadi); o'quvchi daqiqalab kutmaydi."""
+    vec = await asyncio.to_thread(_embed_batch, [query], "RETRIEVAL_QUERY", 2, 5)
     return vec[0]
+
+
+_WORD_RE = re.compile(r"[a-zA-Z\u00C0-\u024F\u0400-\u04FF\u2019'ʻ]+")
+_STOP = {"bu", "va", "uchun", "bilan", "qanday", "nima", "deb", "ham", "men", "siz", "yoki",
+         "kerak", "bo'ladi", "boladi", "qilish", "qilsa", "haqida", "the", "and", "for"}
+
+
+def _keyword_search(store, query: str, k: int) -> List[Tuple[Dict, float]]:
+    """Embedding bo'lmaganda (kvota 429) zaxira: so'zlar kesishuvi bo'yicha sodda qidiruv.
+    Kosinus qidiruvdan zaifroq, lekin bot javob berishda davom etadi."""
+    words = {w.lower().replace("ʻ", "'").replace("\u2019", "'") for w in _WORD_RE.findall(query)}
+    words = {w for w in words if len(w) >= 3 and w not in _STOP}
+    if not words:
+        return []
+    scored = []
+    for c in store.chunks:
+        if _is_excluded(c):
+            continue
+        text = c.get("text", "").lower()
+        score = sum(text.count(w) for w in words)
+        if score:
+            scored.append((score, c))
+    scored.sort(key=lambda t: -t[0])
+    return [(c, float(sc)) for sc, c in scored[:k]]
 
 
 class VectorStore:
@@ -302,7 +328,17 @@ async def retrieve(query: str, k: int = TOP_K) -> List[Tuple[Dict, float]]:
         return []
 
     qmodule, qlesson = _extract_module_lesson(query)
-    qvec = await embed_query(query)
+    try:
+        qvec = await embed_query(query)
+    except gax_exceptions.ResourceExhausted as e:
+        logger.warning("Embedding kvotasi tugadi — kalit so'z qidiruviga o'tildi: %s", str(e)[:120])
+        from services import alerts
+        await alerts.alert_admins(
+            "embedding_quota",
+            "⚠️ Gemini embedding kvotasi tugadi — savollar vaqtincha kalit so'z qidiruvi bilan javoblanmoqda "
+            "(aniqlik pastroq). Google AI Studio'da billing yoqing.",
+        )
+        return _keyword_search(store, query, k)
 
     # Agar aniq modul/dars so'ralsa, shu darsdan bo'laklarni beramiz (foydalanuvchi
     # aniq shu darsni so'radi — bu yerda chegara qo'llamaymiz).
